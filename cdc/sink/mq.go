@@ -74,7 +74,8 @@ func newMqSink(ctx context.Context, mqProducer mqProducer.Producer, filter *filt
 	notifier := new(notify.Notifier)
 	var protocol codec.Protocol
 	protocol.FromString(config.Sink.Protocol)
-
+	log.Info("[qinggniq] protocol is ", zap.String("protocol", config.Sink.Protocol))
+	log.Info("[qinggniq] partition number ", zap.Int32("partition", partitionNum))
 	k := &mqSink{
 		mqProducer: mqProducer,
 		dispatcher: d,

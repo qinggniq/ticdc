@@ -409,6 +409,7 @@ func (c *Consumer) appendDDL(ddl *model.DDLEvent) {
 	c.ddlListMu.Lock()
 	defer c.ddlListMu.Unlock()
 	if ddl.CommitTs <= c.maxDDLReceivedTs {
+		log.Info("[qinggniq] duplicate ddl? ", zap.String("ddl", ddl.Query))
 		return
 	}
 	globalResolvedTs := atomic.LoadUint64(&c.globalResolvedTs)

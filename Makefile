@@ -24,6 +24,7 @@ endif
 ARCH  := "`uname -s`"
 LINUX := "Linux"
 MAC   := "Darwin"
+
 PACKAGE_LIST := go list ./...| grep -vE 'vendor|proto|ticdc\/tests'
 PACKAGES  := $$($(PACKAGE_LIST))
 PACKAGE_DIRECTORIES := $(PACKAGE_LIST) | sed 's|github.com/pingcap/$(PROJECT)/||'
@@ -83,8 +84,13 @@ check_third_party_binary:
 	@which bin/go-ycsb
 	@which bin/etcdctl
 	@which bin/jq
+	@which mysql
 
-integration_test_build: check_failpoint_ctl
+check_kafka:
+	@which zookeeper-shell
+	# @zookeeper-shell localhost:2181 ls /brok >/dev/null 2>&1 ||  { echo "kafka is not started"; exit 1; }
+
+integration_test_build: check_failpoint_ctl kafka_consumer
 	$(FAILPOINT_ENABLE)
 	$(GOTEST) -c -cover -covemode=atomic \
 		-coverpkg=github.com/pingcap/ticdc/... \
@@ -97,7 +103,7 @@ integration_test: integration_test_mysql
 integration_test_mysql: check_third_party_binary
 	tests/run.sh $(CASE) mysql
 
-integration_test_kafka: check_third_party_binary
+integration_test_kafka: check_third_party_binary check_kafka
 	tests/run.sh $(CASE) kafka
 
 fmt:

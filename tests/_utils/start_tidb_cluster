@@ -64,17 +64,25 @@ while ! curl -o /dev/null -sf http://${UP_PD_HOST}:${UP_PD_PORT}/pd/api/v1/versi
     sleep 1
 done
 
+echo "Upstream PD is started"
+
 while ! curl -o /dev/null -sf http://${DOWN_PD_HOST}:${DOWN_PD_PORT}/pd/api/v1/version; do
     sleep 1
 done
 
-while [ -z "$(curl http://${UP_PD_HOST}:${UP_PD_PORT}/pd/health 2> /dev/null | grep 'health' | grep 'true')" ]; do
+echo "DownStream PD is started"
+
+while [ -z "$(curl http://${UP_PD_HOST}:${UP_PD_PORT}/pd/api/v1/health 2> /dev/null | grep 'health' | grep 'true')" ]; do
     sleep 1
 done
 
-while [ -z "$(curl http://${DOWN_PD_HOST}:${DOWN_PD_PORT}/pd/health 2> /dev/null | grep 'health' | grep 'true')" ]; do
+echo "Uptream PD works well"
+
+while [ -z "$(curl http://${DOWN_PD_HOST}:${DOWN_PD_PORT}/pd/api/v1/health 2> /dev/null | grep 'health' | grep 'true')" ]; do
     sleep 1
 done
+
+echo "Downstream PD works well"
 
 # Tries to limit the max number of open files under the system limit
 cat - >"$OUT_DIR/tikv-config.toml" <<EOF
@@ -268,20 +276,20 @@ max-open-files = 1000
 block-cache-size = "1GB"
 EOF
 
-echo "Starting Upstream TiFlash..."
-mkdir -p ${OUT_DIR}/tiflash/ && cp $CUR/tiflash-users.toml ${OUT_DIR}/tiflash/users.toml
-tiflash server --config-file "$OUT_DIR/tiflash-config.toml" &
+# echo "Starting Upstream TiFlash..."
+# mkdir -p ${OUT_DIR}/tiflash/ && cp $CUR/tiflash-users.toml ${OUT_DIR}/tiflash/users.toml
+# tiflash server --config-file "$OUT_DIR/tiflash-config.toml" &
 
-echo "Verifying Upsteam TiFlash is started..."
+# echo "Verifying Upsteam TiFlash is started..."
 # Make sure TiFlash is started.
-while ! curl -o /dev/null -sf http://127.0.0.1:17000/metrics 1>/dev/null 2>&1; do
-    i=$((i + 1))
-    if [ "$i" -gt 10 ]; then
-        cat ${OUT_DIR}/tiflash/log/proxy.log
-        cat ${OUT_DIR}/tiflash/log/server.log
-        cat ${OUT_DIR}/tiflash/log/error.log
-        echo 'Failed to start TiFlash'
-        exit 1
-    fi
-    sleep 2
-done
+# while ! curl -o /dev/null -sf http://127.0.0.1:17000/metrics 1>/dev/null 2>&1; do
+#     i=$((i + 1))
+#     if [ "$i" -gt 10 ]; then
+#         #cat ${OUT_DIR}/tiflash/log/proxy.log
+#        #cat ${OUT_DIR}/tiflash/log/server.log
+#        #cat ${OUT_DIR}/tiflash/log/error.log
+#        echo 'Failed to start TiFlash'
+#        exit 1
+#    fi
+#    sleep 2
+#done

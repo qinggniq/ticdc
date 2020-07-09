@@ -19,9 +19,11 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
+	`github.com/pingcap/log`
 	mm "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
-	parser_types `github.com/pingcap/parser/types`
+	parser_types "github.com/pingcap/parser/types"
+	`go.uber.org/zap`
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 
@@ -186,6 +188,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 		}
 	}
 
+	log.Info("[qinggniq]",zap.String("type", mysqlType), zap.String("value", fmt.Sprintf("%v", value)))
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,
