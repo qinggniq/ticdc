@@ -20,7 +20,7 @@ function run() {
 
     run_cdc_server --workdir $WORK_DIR --binary $CDC_BINARY
 
-    TOPIC_NAME="canal-test-3"
+    TOPIC_NAME="canal-test-4"
     case $SINK_TYPE in
         kafka) SINK_URI="kafka://127.0.0.1:9092/$TOPIC_NAME?partition-num=1";;
         mysql) ;&

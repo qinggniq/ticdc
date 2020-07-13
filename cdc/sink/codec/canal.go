@@ -155,40 +155,27 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 
 	isKey := c.WhereHandle != nil && *c.WhereHandle
 	isNull := c.Value == nil
-	length := 0
 	value := ""
 	if !isNull {
 		switch v := c.Value.(type) {
 		case int64:
 			value = strconv.FormatInt(v, 10)
-			length = 8
 		case uint64:
 			value = strconv.FormatUint(v, 10)
-			length = 8
 		case float32:
 			value = strconv.FormatFloat(float64(v), 'f', -1, 32)
-			length = 4
 		case float64:
 			value = strconv.FormatFloat(v, 'f', -1, 64)
-			length = 8
 		case string:
+			log.Info("[qinggniq] string", zap.String("value", v))
 			value = v
-			length = len(v)
 		case []byte:
-			decoded, err := b.bytesDecoder.Bytes(v)
-			if err != nil {
-				return nil, errors.Trace(err)
-			}
-			value = string(decoded)
-			length = len(value)
+			value = string(v)
 			sqlType = JavaSQLTypeBLOB // change sql type to Blob when the type is []byte according to canal
 		default:
 			value = fmt.Sprintf("%v", v)
-			length = len(value)
 		}
 	}
-
-	log.Info("[qinggniq]",zap.String("type", mysqlType), zap.String("value", fmt.Sprintf("%v", value)))
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,
@@ -196,7 +183,6 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 		Updated:       updated,
 		IsNullPresent: &canal.Column_IsNull{IsNull: isNull},
 		Value:         value,
-		Length:        int32(length),
 		MysqlType:     mysqlType,
 	}
 	return canalColumn, nil

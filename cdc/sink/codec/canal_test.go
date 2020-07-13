@@ -18,9 +18,9 @@ import (
 	"github.com/pingcap/check"
 	mm "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
+
 	"github.com/pingcap/ticdc/cdc/model"
 	canal "github.com/pingcap/ticdc/proto/canal"
-	"golang.org/x/text/encoding/charmap"
 )
 
 type canalBatchSuite struct {
@@ -187,23 +187,27 @@ func (s *canalEntrySuite) TestConvertEntry(c *check.C) {
 			c.Assert(col.GetIsKey(), check.IsTrue)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "1")
+			c.Assert(col.GetMysqlType(), check.Equals, "long")
 		case "name":
 			c.Assert(col.GetSqlType(), check.Equals, JavaSQLTypeVARCHAR)
 			c.Assert(col.GetIsKey(), check.IsFalse)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "Bob")
+			c.Assert(col.GetMysqlType(), check.Equals, "varchar")
 		case "tiny":
 			c.Assert(col.GetSqlType(), check.Equals, JavaSQLTypeSMALLINT)
 			c.Assert(col.GetIsKey(), check.IsFalse)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "255")
+			c.Assert(col.GetMysqlType(), check.Equals, "tinyint")
 		case "comment":
 			c.Assert(col.GetSqlType(), check.Equals, JavaSQLTypeBLOB)
 			c.Assert(col.GetIsKey(), check.IsFalse)
 			c.Assert(col.GetIsNull(), check.IsFalse)
-			s, err := charmap.ISO8859_1.NewEncoder().String(col.GetValue())
+			//s, err := charmap.ISO8859_1.NewEncoder().String(col.GetValue())
 			c.Assert(err, check.IsNil)
-			c.Assert(s, check.Equals, "测试")
+			c.Assert(col.GetValue(), check.Equals, "测试")
+			c.Assert(col.GetMysqlType(), check.Equals, "blob")
 		}
 	}
 
@@ -233,6 +237,7 @@ func (s *canalEntrySuite) TestConvertEntry(c *check.C) {
 			c.Assert(col.GetIsKey(), check.IsTrue)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "1")
+			c.Assert(col.GetMysqlType(), check.Equals,"bigint")
 		}
 	}
 
