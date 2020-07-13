@@ -384,6 +384,20 @@ func (o *Owner) loadChangeFeeds(ctx context.Context) error {
 			log.Info("changefeed recovered from failure", zap.String("changefeed", changeFeedID))
 			delete(o.failedFeeds, changeFeedID)
 		}
+		needSave, canInit := cfInfo.CheckErrorHistory()
+		if needSave {
+			err := o.etcdClient.SaveChangeFeedInfo(ctx, cfInfo, changeFeedID)
+			if err != nil {
+				return err
+			}
+		}
+		if !canInit {
+			// avoid too many logs here
+			if time.Now().Unix()%60 == 0 {
+				log.Warn("changefeed fails reach rate limit, try to initialize it later", zap.Int64s("history", cfInfo.ErrorHis))
+			}
+			continue
+		}
 		err = cfInfo.VerifyAndFix()
 		if err != nil {
 			return err
@@ -400,6 +414,13 @@ func (o *Owner) loadChangeFeeds(ctx context.Context) error {
 
 		newCf, err := o.newChangeFeed(ctx, changeFeedID, taskStatus, taskPositions, cfInfo, checkpointTs)
 		if err != nil {
+			cfInfo.Error = &model.RunningError{
+				Addr:    util.CaptureAddrFromCtx(ctx),
+				Code:    "CDC-owner-1001",
+				Message: err.Error(),
+			}
+			cfInfo.ErrorHis = append(cfInfo.ErrorHis, time.Now().UnixNano()/1e6)
+
 			if filter.ChangefeedFastFailError(err) {
 				log.Error("create changefeed with fast fail error, mark changefeed as failed",
 					zap.Error(err), zap.String("changefeedid", changeFeedID))
@@ -409,6 +430,11 @@ func (o *Owner) loadChangeFeeds(ctx context.Context) error {
 					return err
 				}
 				continue
+			}
+
+			err2 := o.etcdClient.SaveChangeFeedInfo(ctx, cfInfo, changeFeedID)
+			if err2 != nil {
+				return err2
 			}
 			return errors.Annotatef(err, "create change feed %s", changeFeedID)
 		}
@@ -547,6 +573,25 @@ func (o *Owner) dispatchJob(ctx context.Context, job model.AdminJob) error {
 	return nil
 }
 
+func (o *Owner) collectChangefeedInfo(ctx context.Context, cid model.ChangeFeedID) (*changeFeed, *model.ChangeFeedStatus, model.FeedState, error) {
+	cf, ok := o.changeFeeds[cid]
+	if ok {
+		return cf, cf.status, cf.info.State, nil
+	}
+	status, _, err := o.etcdClient.GetChangeFeedStatus(ctx, cid)
+	if err != nil {
+		return nil, nil, model.StateNormal, err
+	}
+	feedState := model.StateNormal
+	switch status.AdminJobType {
+	case model.AdminStop:
+		feedState = model.StateStopped
+	case model.AdminRemove:
+		feedState = model.StateRemoved
+	}
+	return nil, status, feedState, nil
+}
+
 func (o *Owner) handleAdminJob(ctx context.Context) error {
 	removeIdx := 0
 	o.adminJobsLock.Lock()
@@ -557,16 +602,33 @@ func (o *Owner) handleAdminJob(ctx context.Context) error {
 	for i, job := range o.adminJobs {
 		log.Info("handle admin job", zap.String("changefeed", job.CfID), zap.Stringer("type", job.Type))
 		removeIdx = i + 1
+
+		cf, status, feedState, err := o.collectChangefeedInfo(ctx, job.CfID)
+		if err != nil {
+			if errors.Cause(err) == model.ErrChangeFeedNotExists {
+				log.Warn("invalid admin job, changefeed status not found", zap.String("changefeed", job.CfID))
+				continue
+			}
+			return err
+		}
 		switch job.Type {
 		case model.AdminStop:
-			// update ChangeFeedDetail to tell capture ChangeFeedDetail watcher to cleanup
-			cf, ok := o.changeFeeds[job.CfID]
-			if !ok {
+			switch feedState {
+			case model.StateStopped:
+				log.Info("changefeed has been stopped, pause command will do nothing")
+				continue
+			case model.StateRemoved:
+				log.Info("changefeed has been removed, pause command will do nothing")
+				continue
+			}
+			if cf == nil {
 				log.Warn("invalid admin job, changefeed not found", zap.String("changefeed", job.CfID))
 				continue
 			}
+
 			cf.info.AdminJobType = model.AdminStop
 			cf.info.Error = job.Error
+			cf.info.ErrorHis = append(cf.info.ErrorHis, time.Now().UnixNano()/1e6)
 			err := o.etcdClient.SaveChangeFeedInfo(ctx, cf.info, job.CfID)
 			if err != nil {
 				return errors.Trace(err)
@@ -577,13 +639,30 @@ func (o *Owner) handleAdminJob(ctx context.Context) error {
 				return errors.Trace(err)
 			}
 		case model.AdminRemove:
-			err := o.dispatchJob(ctx, job)
-			if err != nil {
-				return errors.Trace(err)
+			if cf != nil {
+				err := o.dispatchJob(ctx, job)
+				if err != nil {
+					return errors.Trace(err)
+				}
+			} else {
+				switch feedState {
+				case model.StateRemoved:
+					// remove a removed changefeed
+					log.Info("changefeed has been removed, remove command will do nothing")
+					continue
+				case model.StateStopped:
+					// remove a paused changefeed
+					status.AdminJobType = model.AdminRemove
+					err = o.etcdClient.PutChangeFeedStatus(ctx, job.CfID, status)
+					if err != nil {
+						return errors.Trace(err)
+					}
+				default:
+					return errors.Errorf("changefeed in abnormal state: %+v", status)
+				}
 			}
-
 			// remove changefeed info
-			err = o.etcdClient.DeleteChangeFeedInfo(ctx, job.CfID)
+			err := o.etcdClient.DeleteChangeFeedInfo(ctx, job.CfID)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -593,37 +672,46 @@ func (o *Owner) handleAdminJob(ctx context.Context) error {
 				return errors.Trace(err)
 			}
 		case model.AdminResume:
-			cfStatus, _, err := o.etcdClient.GetChangeFeedStatus(ctx, job.CfID)
+			// resume changefeed must read checkpoint from ChangeFeedStatus
 			if errors.Cause(err) == model.ErrChangeFeedNotExists {
 				log.Warn("invalid admin job, changefeed not found", zap.String("changefeed", job.CfID))
 				continue
 			}
-			if err != nil {
-				return errors.Trace(err)
+			if feedState == model.StateRemoved {
+				log.Info("changefeed has been removed, cannot be resumed anymore")
+				continue
 			}
 			cfInfo, err := o.etcdClient.GetChangeFeedInfo(ctx, job.CfID)
-			if errors.Cause(err) == model.ErrChangeFeedNotExists {
-				log.Warn("invalid admin job, changefeed not found", zap.String("changefeed", job.CfID))
-				continue
-			}
 			if err != nil {
 				return errors.Trace(err)
 			}
 
 			// set admin job in changefeed status to tell owner resume changefeed
-			cfStatus.AdminJobType = model.AdminResume
-			err = o.etcdClient.PutChangeFeedStatus(ctx, job.CfID, cfStatus)
+			status.AdminJobType = model.AdminResume
+			err = o.etcdClient.PutChangeFeedStatus(ctx, job.CfID, status)
 			if err != nil {
 				return errors.Trace(err)
 			}
 
 			// set admin job in changefeed cfInfo to trigger each capture's changefeed list watch event
 			cfInfo.AdminJobType = model.AdminResume
+			// clear last running error
+			cfInfo.State = model.StateNormal
+			cfInfo.Error = nil
 			err = o.etcdClient.SaveChangeFeedInfo(ctx, cfInfo, job.CfID)
 			if err != nil {
 				return errors.Trace(err)
 			}
 		}
+		// TODO: we need a better admin job workflow. Supposing uses create
+		// multiple admin jobs to a specific changefeed at the same time, such
+		// as pause -> resume -> pause, should the one job handler waits for
+		// the previous job finished? However it is difficult to distinguish
+		// whether a job is totally finished in some cases, for example when
+		// resuming a changefeed, seems we should mark the job finished if all
+		// processors have started. Currently the owner only processes one
+		// admin job in each tick loop as a workaround.
+		break
 	}
 	return nil
 }
@@ -773,12 +861,7 @@ func (o *Owner) run(ctx context.Context) error {
 // EnqueueJob adds an admin job
 func (o *Owner) EnqueueJob(job model.AdminJob) error {
 	switch job.Type {
-	case model.AdminResume:
-	case model.AdminStop, model.AdminRemove:
-		_, ok := o.changeFeeds[job.CfID]
-		if !ok {
-			return errors.Errorf("changefeed [%s] not found", job.CfID)
-		}
+	case model.AdminResume, model.AdminRemove, model.AdminStop:
 	default:
 		return errors.Errorf("invalid admin job type: %d", job.Type)
 	}
@@ -993,11 +1076,15 @@ func (o *Owner) rebuildCaptureEvents(ctx context.Context, captures []*model.Capt
 func (o *Owner) startCaptureWatcher(ctx context.Context) {
 	log.Info("start to watch captures")
 	go func() {
-		rl := rate.NewLimiter(0.05, 5)
+		rl := rate.NewLimiter(0.05, 2)
 		for {
-			if !rl.Allow() {
-				log.Error("owner capture watcher exceeds rate limit")
-				time.Sleep(10 * time.Second)
+			err := rl.Wait(ctx)
+			if err != nil {
+				if errors.Cause(err) == context.Canceled {
+					return
+				}
+				log.Error("capture watcher wait limit token error", zap.Error(err))
+				return
 			}
 			if err := o.watchCapture(ctx); err != nil {
 				// When the watching routine returns, the error must not

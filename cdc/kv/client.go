@@ -44,7 +44,9 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	gbackoff "google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -59,7 +61,7 @@ const (
 
 type singleRegionInfo struct {
 	verID        tikv.RegionVerID
-	span         regionspan.Span
+	span         regionspan.ComparableSpan
 	ts           uint64
 	failStoreIDs map[uint64]struct{}
 	rpcCtx       *tikv.RPCContext
@@ -74,7 +76,7 @@ var (
 	metricFeedRPCCtxUnavailable       = eventFeedErrorCounter.WithLabelValues("RPCCtxUnavailable")
 )
 
-func newSingleRegionInfo(verID tikv.RegionVerID, span regionspan.Span, ts uint64, rpcCtx *tikv.RPCContext) singleRegionInfo {
+func newSingleRegionInfo(verID tikv.RegionVerID, span regionspan.ComparableSpan, ts uint64, rpcCtx *tikv.RPCContext) singleRegionInfo {
 	return singleRegionInfo{
 		verID:        verID,
 		span:         span,
@@ -320,7 +322,7 @@ func (c *CDCClient) newStream(ctx context.Context, addr string, storeID uint64) 
 // provided channel.
 // The `Start` and `End` field in input span must be memcomparable encoded.
 func (c *CDCClient) EventFeed(
-	ctx context.Context, span regionspan.Span, ts uint64, eventCh chan<- *model.RegionFeedEvent,
+	ctx context.Context, span regionspan.ComparableSpan, ts uint64, eventCh chan<- *model.RegionFeedEvent,
 ) error {
 	s := newEventFeedSession(c, c.regionCache, c.kvStorage, span, eventCh)
 	return s.eventFeed(ctx, ts)
@@ -338,7 +340,7 @@ type eventFeedSession struct {
 	kvStorage   tikv.Storage
 
 	// The whole range that is being subscribed.
-	totalSpan regionspan.Span
+	totalSpan regionspan.ComparableSpan
 
 	// The channel to send the processed events.
 	eventCh chan<- *model.RegionFeedEvent
@@ -360,7 +362,7 @@ type eventFeedSession struct {
 }
 
 type rangeRequestTask struct {
-	span regionspan.Span
+	span regionspan.ComparableSpan
 	ts   uint64
 }
 
@@ -368,7 +370,7 @@ func newEventFeedSession(
 	client *CDCClient,
 	regionCache *tikv.RegionCache,
 	kvStorage tikv.Storage,
-	totalSpan regionspan.Span,
+	totalSpan regionspan.ComparableSpan,
 	eventCh chan<- *model.RegionFeedEvent,
 ) *eventFeedSession {
 	id := strconv.FormatUint(allocID(), 10)
@@ -436,7 +438,7 @@ func (s *eventFeedSession) eventFeed(ctx context.Context, ts uint64) error {
 
 // scheduleDivideRegionAndRequest schedules a range to be divided by regions, and these regions will be then scheduled
 // to send ChangeData requests.
-func (s *eventFeedSession) scheduleDivideRegionAndRequest(ctx context.Context, span regionspan.Span, ts uint64, blocking bool) {
+func (s *eventFeedSession) scheduleDivideRegionAndRequest(ctx context.Context, span regionspan.ComparableSpan, ts uint64, blocking bool) {
 	task := rangeRequestTask{span: span, ts: ts}
 	if blocking {
 		select {
@@ -780,7 +782,7 @@ func (s *eventFeedSession) partialRegionFeed(
 // to region boundaries. When region merging happens, it's possible that it
 // will produce some overlapping spans.
 func (s *eventFeedSession) divideAndSendEventFeedToRegions(
-	ctx context.Context, span regionspan.Span, ts uint64,
+	ctx context.Context, span regionspan.ComparableSpan, ts uint64,
 ) error {
 	limit := 20
 
@@ -830,7 +832,7 @@ func (s *eventFeedSession) divideAndSendEventFeedToRegions(
 
 		for _, tiRegion := range regions {
 			region := tiRegion.GetMeta()
-			partialSpan, err := regionspan.Intersect(s.totalSpan, regionspan.Span{Start: region.StartKey, End: region.EndKey})
+			partialSpan, err := regionspan.Intersect(s.totalSpan, regionspan.ComparableSpan{Start: region.StartKey, End: region.EndKey})
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -945,11 +947,20 @@ func (s *eventFeedSession) receiveFromStream(
 			return nil
 		}
 		if err != nil {
-			log.Error(
-				"failed to receive from stream",
-				zap.String("addr", addr),
-				zap.Uint64("storeID", storeID),
-				zap.Error(err))
+			if status.Code(errors.Cause(err)) == codes.Canceled {
+				log.Debug(
+					"receive from stream canceled",
+					zap.String("addr", addr),
+					zap.Uint64("storeID", storeID),
+				)
+			} else {
+				log.Error(
+					"failed to receive from stream",
+					zap.String("addr", addr),
+					zap.Uint64("storeID", storeID),
+					zap.Error(err),
+				)
+			}
 
 			for _, state := range regionStates {
 				select {
@@ -1034,7 +1045,7 @@ func (s *eventFeedSession) receiveFromStream(
 func (s *eventFeedSession) singleEventFeed(
 	ctx context.Context,
 	regionID uint64,
-	span regionspan.Span,
+	span regionspan.ComparableSpan,
 	startTs uint64,
 	receiverCh <-chan *cdcpb.Event,
 ) (uint64, error) {

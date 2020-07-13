@@ -95,10 +95,11 @@ type processor struct {
 	output    chan *model.PolymorphicEvent
 	mounter   entry.Mounter
 
-	stateMu  sync.Mutex
-	status   *model.TaskStatus
-	position *model.TaskPosition
-	tables   map[int64]*tableInfo
+	stateMu      sync.Mutex
+	status       *model.TaskStatus
+	position     *model.TaskPosition
+	tables       map[int64]*tableInfo
+	markTableIDs map[int64]struct{}
 
 	sinkEmittedResolvedNotifier *notify.Notifier
 	sinkEmittedResolvedReceiver *notify.Receiver
@@ -163,7 +164,7 @@ func newProcessor(
 	// The key in DDL kv pair returned from TiKV is already memcompariable encoded,
 	// so we set `needEncode` to false.
 	log.Info("start processor with startts", zap.Uint64("startts", checkpointTs))
-	ddlPuller := puller.NewPuller(pdCli, kvStorage, checkpointTs, []regionspan.Span{regionspan.GetDDLSpan(), regionspan.GetAddIndexDDLSpan()}, false, limitter)
+	ddlPuller := puller.NewPuller(pdCli, kvStorage, checkpointTs, []regionspan.Span{regionspan.GetDDLSpan(), regionspan.GetAddIndexDDLSpan()}, limitter)
 	filter, err := filter.NewFilter(changefeed.Config)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -202,11 +203,12 @@ func newProcessor(
 		localResolvedNotifier: localResolvedNotifier,
 		localResolvedReceiver: localResolvedNotifier.NewReceiver(50 * time.Millisecond),
 
-		tables: make(map[int64]*tableInfo),
+		tables:       make(map[int64]*tableInfo),
+		markTableIDs: make(map[int64]struct{}),
 	}
 
-	for tableID, startTs := range p.status.Tables {
-		p.addTable(ctx, tableID, startTs)
+	for tableID, replicaInfo := range p.status.Tables {
+		p.addTable(ctx, tableID, replicaInfo)
 	}
 	return p, nil
 }
@@ -302,6 +304,12 @@ func (p *processor) positionWorker(ctx context.Context) error {
 		err := retry.Run(500*time.Millisecond, 3, func() error {
 			inErr := p.updateInfo(ctx)
 			if inErr != nil {
+				if errors.Cause(inErr) != context.Canceled {
+					log.Error(
+						"update info failed",
+						zap.String("changefeed", p.changefeedID), zap.Error(inErr),
+					)
+				}
 				if p.isStopped() || errors.Cause(inErr) == model.ErrAdminStopProcessor {
 					return backoff.Permanent(errors.Trace(model.ErrAdminStopProcessor))
 				}
@@ -499,6 +507,9 @@ func (p *processor) removeTable(tableID int64) {
 
 	table.cancel()
 	delete(p.tables, tableID)
+	if table.markTableID != 0 {
+		delete(p.markTableIDs, table.markTableID)
+	}
 	tableResolvedTsGauge.DeleteLabelValues(p.changefeedID, p.captureInfo.AdvertiseAddr, table.name)
 	syncTableNumGauge.WithLabelValues(p.changefeedID, p.captureInfo.AdvertiseAddr).Dec()
 }
@@ -772,8 +783,8 @@ func (p *processor) addTable(ctx context.Context, tableID int64, replicaInfo *mo
 		// start table puller
 		// The key in DML kv pair returned from TiKV is not memcompariable encoded,
 		// so we set `needEncode` to true.
-		span := regionspan.GetTableSpan(tableID, true)
-		plr := puller.NewPuller(p.pdCli, p.kvStorage, replicaInfo.StartTs, []regionspan.Span{span}, true, p.limitter)
+		span := regionspan.GetTableSpan(tableID)
+		plr := puller.NewPuller(p.pdCli, p.kvStorage, replicaInfo.StartTs, []regionspan.Span{span}, p.limitter)
 		go func() {
 			err := plr.Run(ctx)
 			if errors.Cause(err) != context.Canceled {
@@ -847,11 +858,14 @@ func (p *processor) addTable(ctx context.Context, tableID int64, replicaInfo *mo
 
 	if p.changefeed.Config.Cyclic.IsEnabled() && replicaInfo.MarkTableID != 0 {
 		mTableID := replicaInfo.MarkTableID
+		// we should to make sure a mark table is only listened once.
+		if _, exist := p.markTableIDs[mTableID]; !exist {
+			p.markTableIDs[mTableID] = struct{}{}
+			startPuller(mTableID, &table.mResolvedTs)
 
-		startPuller(mTableID, &table.mResolvedTs)
-
-		table.markTableID = mTableID
-		table.mResolvedTs = replicaInfo.StartTs
+			table.markTableID = mTableID
+			table.mResolvedTs = replicaInfo.StartTs
+		}
 	}
 
 	p.tables[tableID] = table
