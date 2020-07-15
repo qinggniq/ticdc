@@ -12,7 +12,7 @@ function run() {
     rm -rf $WORK_DIR && mkdir -p $WORK_DIR
 
     start_tidb_cluster --workdir $WORK_DIR
-
+    sleep 10000
     cd $WORK_DIR
 
     # record tso before we create tables to skip the system table DDLs

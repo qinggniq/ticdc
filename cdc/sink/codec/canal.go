@@ -19,11 +19,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
-	`github.com/pingcap/log`
 	mm "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
 	parser_types "github.com/pingcap/parser/types"
-	`go.uber.org/zap`
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 
@@ -167,15 +165,20 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 		case float64:
 			value = strconv.FormatFloat(v, 'f', -1, 64)
 		case string:
-			log.Info("[qinggniq] string", zap.String("value", v))
 			value = v
 		case []byte:
 			value = string(v)
+			decoded, err := b.bytesDecoder.Bytes(v)
+			if err != nil {
+				return nil, errors.Trace(err)
+			}
+			value = string(decoded)
 			sqlType = JavaSQLTypeBLOB // change sql type to Blob when the type is []byte according to canal
 		default:
 			value = fmt.Sprintf("%v", v)
 		}
 	}
+
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,

@@ -187,7 +187,7 @@ func (s *canalEntrySuite) TestConvertEntry(c *check.C) {
 			c.Assert(col.GetIsKey(), check.IsTrue)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "1")
-			c.Assert(col.GetMysqlType(), check.Equals, "long")
+			c.Assert(col.GetMysqlType(), check.Equals, "int")
 		case "name":
 			c.Assert(col.GetSqlType(), check.Equals, int32(JavaSQLTypeVARCHAR))
 			c.Assert(col.GetIsKey(), check.IsFalse)
@@ -207,7 +207,7 @@ func (s *canalEntrySuite) TestConvertEntry(c *check.C) {
 			//s, err := charmap.ISO8859_1.NewEncoder().String(col.GetValue())
 			c.Assert(err, check.IsNil)
 			c.Assert(col.GetValue(), check.Equals, "测试")
-			c.Assert(col.GetMysqlType(), check.Equals, "blob")
+			c.Assert(col.GetMysqlType(), check.Equals, "text")
 		}
 	}
 
@@ -237,7 +237,7 @@ func (s *canalEntrySuite) TestConvertEntry(c *check.C) {
 			c.Assert(col.GetIsKey(), check.IsTrue)
 			c.Assert(col.GetIsNull(), check.IsFalse)
 			c.Assert(col.GetValue(), check.Equals, "1")
-			c.Assert(col.GetMysqlType(), check.Equals,"bigint")
+			c.Assert(col.GetMysqlType(), check.Equals,"int")
 		}
 	}
 
