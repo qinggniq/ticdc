@@ -33,7 +33,7 @@ var defaultReplicaConfig = &ReplicaConfig{
 		WorkerNum: 16,
 	},
 	Sink: &SinkConfig{
-		Protocol: "default",
+		Protocol: "canal",
 	},
 	Cyclic: &CyclicConfig{
 		Enable: false,
