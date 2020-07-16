@@ -16,6 +16,7 @@ package model
 import (
 	"fmt"
 
+	bitflag "github.com/mvpninjas/go-bitflag"
 	"github.com/pingcap/log"
 	"github.com/pingcap/parser/model"
 	"go.uber.org/zap"
@@ -36,8 +37,8 @@ const (
 )
 
 const (
-	BinaryFlag    uint32 = 1 << 0
-	NotBinaryFlag uint32 = 1 << 1
+	// BinaryFlag means col charset is binary
+	BinaryFlag bitflag.Flag = 1 << bitflag.Flag(iota)
 )
 
 // TableName represents name of a table, includes table name and schema name.
@@ -91,10 +92,10 @@ type RowChangedEvent struct {
 
 // Column represents a column value in row changed event
 type Column struct {
-	Type        byte        `json:"t"`
-	WhereHandle *bool       `json:"h,omitempty"`
-	Flag        uint32      `json:"f"`
-	Value       interface{} `json:"v"`
+	Type        byte         `json:"t"`
+	WhereHandle *bool        `json:"h,omitempty"`
+	Flag        bitflag.Flag `json:"f"`
+	Value       interface{}  `json:"v"`
 }
 
 // ColumnInfo represents the name and type information passed to the sink
