@@ -14,7 +14,7 @@ function run() {
     start_tidb_cluster --workdir $WORK_DIR
     cd $WORK_DIR
     
-    sleep 10000
+    #sleep 10000
     # record tso before we create tables to skip the system table DDLs
     start_ts=$(run_cdc_cli tso query --pd=http://$UP_PD_HOST:$UP_PD_PORT)
 
