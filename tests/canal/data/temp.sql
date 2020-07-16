@@ -38,3 +38,31 @@ insert into t(t_date) values("1582-10-27");
 insert into t(t_date) values("1582-10-28");
 insert into t(t_date) values("1582-10-29");
 insert into t(t_date) values("1582-10-30");
+
+
+CREATE TABLE text_
+(
+    id          INT AUTO_INCREMENT,
+    t_text      TEXT,
+    PRIMARY KEY (id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8
+  COLLATE = utf8_bin;
+
+  CREATE TABLE blob_
+(
+    id          INT AUTO_INCREMENT,
+    t_blob      BLOB,
+    PRIMARY KEY (id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8
+  COLLATE = utf8_bin;
+
+    CREATE TABLE year_
+(
+    id          INT AUTO_INCREMENT,
+    t_year      YEAR,
+    PRIMARY KEY (id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8
+  COLLATE = utf8_bin;
