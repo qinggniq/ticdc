@@ -16,12 +16,17 @@ package dispatcher
 import (
 	"strings"
 
+	`github.com/pingcap/errors`
 	"github.com/pingcap/log"
-	"github.com/pingcap/ticdc/cdc/model"
-	"github.com/pingcap/ticdc/pkg/config"
 	filter "github.com/pingcap/tidb-tools/pkg/table-filter"
 	"go.uber.org/zap"
+
+	"github.com/pingcap/ticdc/cdc/model"
+	`github.com/pingcap/ticdc/cdc/sink/codec`
+	"github.com/pingcap/ticdc/pkg/config"
 )
+
+var errDispatcherRuleNotMatch = errors.New("dispather rule is not suitable for the protocol")
 
 // Dispatcher is an abstraction for dispatching rows into different partitions
 type Dispatcher interface {
@@ -82,6 +87,9 @@ func NewDispatcher(cfg *config.ReplicaConfig, partitionNum int32) (Dispatcher, e
 		Matcher:    []string{"*.*"},
 		Dispatcher: "default",
 	})
+	var protocol codec.Protocol
+	protocol.FromString(cfg.Sink.Protocol)
+
 	rules := make([]struct {
 		Dispatcher
 		filter.Filter
@@ -107,6 +115,9 @@ func NewDispatcher(cfg *config.ReplicaConfig, partitionNum int32) (Dispatcher, e
 			d = &tableDispatcher{partitionNum: partitionNum}
 		case dispatchRuleDefault:
 			d = &defaultDispatcher{partitionNum: partitionNum}
+		}
+		if protocol == codec.ProtocolCanal && (rule != dispatchRuleTS && rule != dispatchRuleTable) {
+			return nil, errDispatcherRuleNotMatch
 		}
 		rules = append(rules, struct {
 			Dispatcher

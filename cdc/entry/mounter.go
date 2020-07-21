@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mvpninjas/go-bitflag"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	timodel "github.com/pingcap/parser/model"
@@ -374,14 +373,11 @@ func (m *mounterImpl) mountRowKVEntry(tableInfo *TableInfo, row *rowKVEntry) (*m
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
-		var flag bitflag.Flag
-		if colInfo.Charset == "binary" {
-			flag.Set(model.BinaryFlag)
-		}
+
 		col := &model.Column{
 			Type:  colInfo.Tp,
 			Value: value,
-			Flag:  flag,
+			Flag:  transColumnFlag(colInfo),
 		}
 		if tableInfo.IsColumnUnique(colInfo.ID) {
 			whereHandle := true
@@ -412,14 +408,12 @@ func (m *mounterImpl) mountRowKVEntry(tableInfo *TableInfo, row *rowKVEntry) (*m
 		for _, col := range tableInfo.Columns {
 			_, ok := values[col.Name.O]
 			if !ok && tableInfo.IsColWritable(col) {
-				var flag bitflag.Flag
-				if col.Charset == "binary" {
-					flag.Set(model.BinaryFlag)
-				}
+
 				column := &model.Column{
 					Type:  col.Tp,
 					Value: getDefaultOrZeroValue(col),
-					Flag:  flag,
+
+					Flag:  transColumnFlag(col),
 				}
 				if tableInfo.IsColumnUnique(col.ID) {
 					whereHandle := true
@@ -466,6 +460,7 @@ func (m *mounterImpl) mountIndexKVEntry(tableInfo *TableInfo, idx *indexKVEntry)
 			Type:        tableInfo.Columns[idxCol.Offset].Tp,
 			WhereHandle: &whereHandle,
 			Value:       value,
+			Flag:        transColumnFlag(tableInfo.Columns[idxCol.Offset]),
 		}
 	}
 	return &model.RowChangedEvent{
@@ -648,6 +643,14 @@ func columnValue(value interface{}) string {
 	}
 
 	return data
+}
+
+func transColumnFlag(col *timodel.ColumnInfo) model.ColumnFlagType {
+	var flag model.ColumnFlagType
+	if col.Charset == "binary" {
+		flag.SetIsBinary()
+	}
+	return flag
 }
 
 func genKeyList(table string, columns []*timodel.ColumnInfo, values map[string]*model.Column) string {

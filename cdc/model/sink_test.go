@@ -11,18 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package mqProducer
+package model
 
-import (
-	"context"
-)
+import "github.com/pingcap/check"
 
-// Producer is a interface of mq producer
-type Producer interface {
-	AsyncSendMessage(ctx context.Context, key []byte, value []byte, partition int32) error
-	SyncSendMessage(ctx context.Context, key []byte, value []byte, partition int32) error
-	SyncBroadcastMessage(ctx context.Context, key []byte, value []byte) error
-	Flush(ctx context.Context) error
-	GetPartitionNum() int32
-	Close() error
+type columnFlagTypeSuite struct{}
+
+var _ = check.Suite(&columnFlagTypeSuite{})
+
+func (s *configSuite) TestBinaryFlag(c *check.C) {
+	var flag ColumnFlagType
+	c.Assert(flag.IsBinary(), check.IsFalse)
+	flag.SetIsBinary()
+	c.Assert(flag.IsBinary(), check.IsTrue)
+	flag.UnsetIsBinary()
+	c.Assert(flag.IsBinary(), check.IsFalse)
 }
