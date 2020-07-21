@@ -1,0 +1,62 @@
+#!/bin/bash
+source ./test_prepare
+ADAPTER_WORKDIR=/Users/qinggniq/Git/canal/client-adapter/launcher/target/canal-adapter
+
+
+cat - >"$ADAPTER_WORKDIR/conf/application.yml" <<EOF
+server:
+  port: 8081
+spring:
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+canal.conf:
+  mode: kafka #rocketMQ rabbitMQ
+  flatMessage: false
+  zookeeperHosts:
+  syncBatchSize: 1000
+  retries: 0
+  timeout:
+  accessKey:
+  secretKey:
+  consumerProperties:
+    # kafka consumer
+    kafka.bootstrap.servers: 127.0.0.1:9092
+    kafka.enable.auto.commit: false
+    kafka.auto.commit.interval.ms: 1000
+    kafka.auto.offset.reset: latest
+    kafka.request.timeout.ms: 40000
+    kafka.session.timeout.ms: 30000
+    kafka.isolation.level: read_committed
+    kafka.max.poll.records: 1000
+
+  canalAdapters:
+  - instance: $1 # canal instance Name or mq topic name
+    groups:
+    - groupId: g1
+      outerAdapters:
+      - name: rdb
+        key: mysql1
+        properties:
+          jdbc.driverClassName: com.mysql.jdbc.Driver
+          jdbc.url: jdbc:mysql://${DOWN_TIDB_HOST}:${DOWN_TIDB_PORT}/$2
+          jdbc.username: root
+          jdbc.password:
+EOF
+
+cat - >"$ADAPTER_WORKDIR/conf/rdb/mytest_user.yml" <<EOF
+dataSourceKey: defaultDS
+destination: $1
+groupId: g1
+outerAdapterKey: mysql1
+#concurrent: true
+dbMapping:
+  mirrorDb: true
+  database: row_format
+EOF
+
+rm -f $$ADAPTER_WORKDIR/logs/adapter.log
+bash $ADAPTER_WORKDIR/bin/stop.sh
+bash $ADAPTER_WORKDIR/bin/startup.sh
