@@ -27,6 +27,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pingcap/ticdc/pkg/notify"
+	"github.com/pingcap/ticdc/pkg/security"
 	"github.com/pingcap/ticdc/pkg/util"
 )
 
@@ -39,14 +40,19 @@ type KafkaConfig struct {
 	MaxMessageBytes int
 	Compression     string
 	ClientID        string
+	Credential      *security.Credential
+	// TODO support SASL authentication
 }
 
-// DefaultKafkaConfig is the default Kafka configuration
-var DefaultKafkaConfig = KafkaConfig{
-	Version:           "2.4.0",
-	MaxMessageBytes:   512 * 1024 * 1024, // 512M
-	ReplicationFactor: 1,
-	Compression:       "none",
+// NewKafkaConfig returns a default Kafka configuration
+func NewKafkaConfig() KafkaConfig {
+	return KafkaConfig{
+		Version:           "2.4.0",
+		MaxMessageBytes:   512 * 1024 * 1024, // 512M
+		ReplicationFactor: 1,
+		Compression:       "none",
+		Credential:        &security.Credential{},
+	}
 }
 
 type kafkaSaramaProducer struct {
@@ -361,6 +367,14 @@ func newSaramaConfig(ctx context.Context, c KafkaConfig) (*sarama.Config, error)
 	config.Admin.Retry.Max = 10000
 	config.Admin.Retry.Backoff = 500 * time.Millisecond
 	config.Admin.Timeout = 20 * time.Second
+
+	if c.Credential != nil && len(c.Credential.CAPath) != 0 {
+		config.Net.TLS.Enable = true
+		config.Net.TLS.Config, err = c.Credential.ToTLSConfig()
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
 
 	return config, err
 }
