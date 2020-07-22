@@ -16,7 +16,6 @@ package dispatcher
 import (
 	"strings"
 
-	`github.com/pingcap/errors`
 	"github.com/pingcap/log"
 	filter "github.com/pingcap/tidb-tools/pkg/table-filter"
 	"go.uber.org/zap"
@@ -26,9 +25,7 @@ import (
 	"github.com/pingcap/ticdc/pkg/config"
 )
 
-var errDispatcherRuleNotMatch = errors.New("dispather rule is not suitable for the protocol")
-
-// Dispatcher is an abstraction for dispatching rows into different partitions
+// Dispatcher is an abstracion for dispatching rows into different partitions
 type Dispatcher interface {
 	// Dispatch returns a index of partitions according to RowChangedEvent
 	Dispatch(row *model.RowChangedEvent) int32
@@ -115,9 +112,6 @@ func NewDispatcher(cfg *config.ReplicaConfig, partitionNum int32) (Dispatcher, e
 			d = &tableDispatcher{partitionNum: partitionNum}
 		case dispatchRuleDefault:
 			d = &defaultDispatcher{partitionNum: partitionNum}
-		}
-		if protocol == codec.ProtocolCanal && (rule != dispatchRuleTS && rule != dispatchRuleTable) {
-			return nil, errDispatcherRuleNotMatch
 		}
 		rules = append(rules, struct {
 			Dispatcher

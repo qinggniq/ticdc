@@ -1,5 +1,8 @@
 #!/bin/bash
-source ./test_prepare
+
+set -e
+CUR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source $CUR/../_utils/test_prepare
 ADAPTER_WORKDIR=/Users/qinggniq/Git/canal/client-adapter/launcher/target/canal-adapter
 
 
@@ -54,9 +57,10 @@ outerAdapterKey: mysql1
 #concurrent: true
 dbMapping:
   mirrorDb: true
-  database: row_format
+  database: $2
 EOF
 
 rm -f $$ADAPTER_WORKDIR/logs/adapter.log
-bash $ADAPTER_WORKDIR/bin/stop.sh
-bash $ADAPTER_WORKDIR/bin/startup.sh
+cd $ADAPTER_WORKDIR
+./bin/stop.sh
+./bin/startup.sh

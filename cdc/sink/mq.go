@@ -143,6 +143,7 @@ func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowCha
 }
 
 func (k *mqSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) error {
+	log.Info("[qinggniq] call flush", zap.Uint64("resolvedTs", resolvedTs))
 	if resolvedTs <= k.checkpointTs {
 		return nil
 	}
@@ -223,6 +224,7 @@ func (k *mqSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
 		log.Info("emit ddl event", zap.ByteString("key", key), zap.ByteString("value", value))
 		if k.protocol == codec.ProtocolCanal {
 			// see https://github.com/alibaba/canal/blob/master/connector/core/src/main/java/com/alibaba/otter/canal/connector/core/producer/MQMessageUtils.java#L257
+			log.Info("[qinggniq] ddl send to 0")
 			err = k.mqProducer.SyncSendMessage(ctx, key, value, 0)
 		}else{
 			err = k.mqProducer.SyncBroadcastMessage(ctx, key, value)
@@ -327,6 +329,10 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-tick.C:
+			// canal messages should not flush until the call of flushRowChangeEvent
+			if k.protocol == codec.ProtocolCanal {
+				continue
+			}
 			if err := flushToProducer(); err != nil {
 				return errors.Trace(err)
 			}
