@@ -15,7 +15,6 @@ package sink
 
 import (
 	"context"
-
 	"net/url"
 	"strconv"
 	"strings"
@@ -25,6 +24,9 @@ import (
 	"github.com/linkedin/goavro/v2"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/pingcap/ticdc/cdc/model"
 	"github.com/pingcap/ticdc/cdc/sink/codec"
 	"github.com/pingcap/ticdc/cdc/sink/dispatcher"
@@ -34,8 +36,6 @@ import (
 	"github.com/pingcap/ticdc/pkg/filter"
 	"github.com/pingcap/ticdc/pkg/notify"
 	"github.com/pingcap/ticdc/pkg/security"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 type mqSink struct {
@@ -50,6 +50,7 @@ type mqSink struct {
 		row        *model.RowChangedEvent
 		resolvedTs uint64
 	}
+	partitionTxns       []map[model.TableName][]*model.Txn
 	partitionResolvedTs []uint64
 	checkpointTs        uint64
 	resolvedNotifier    *notify.Notifier
@@ -67,11 +68,13 @@ func newMqSink(
 		row        *model.RowChangedEvent
 		resolvedTs uint64
 	}, partitionNum)
+	partitionTxns := make([]map[model.TableName][]*model.Txn, partitionNum)
 	for i := 0; i < int(partitionNum); i++ {
 		partitionInput[i] = make(chan struct {
 			row        *model.RowChangedEvent
 			resolvedTs uint64
 		}, 12800)
+		partitionTxns[i] = make(map[model.TableName][]*model.Txn)
 	}
 	d, err := dispatcher.NewDispatcher(config, mqProducer.GetPartitionNum())
 	if err != nil {
@@ -108,6 +111,7 @@ func newMqSink(
 
 		partitionNum:        partitionNum,
 		partitionInput:      partitionInput,
+		partitionTxns:       partitionTxns,
 		partitionResolvedTs: make([]uint64, partitionNum),
 		resolvedNotifier:    notifier,
 		resolvedReceiver:    notifier.NewReceiver(50 * time.Millisecond),
@@ -134,6 +138,7 @@ func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowCha
 			continue
 		}
 		partition := k.dispatcher.Dispatch(row)
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -147,7 +152,6 @@ func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowCha
 }
 
 func (k *mqSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) error {
-	log.Info("[qinggniq] call flush", zap.Uint64("resolvedTs", resolvedTs))
 	if resolvedTs <= k.checkpointTs {
 		return nil
 	}
@@ -228,9 +232,8 @@ func (k *mqSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
 		log.Info("emit ddl event", zap.ByteString("key", key), zap.ByteString("value", value))
 		if k.protocol == codec.ProtocolCanal {
 			// see https://github.com/alibaba/canal/blob/master/connector/core/src/main/java/com/alibaba/otter/canal/connector/core/producer/MQMessageUtils.java#L257
-			log.Info("[qinggniq] ddl send to 0")
 			err = k.mqProducer.SyncSendMessage(ctx, key, value, 0)
-		}else{
+		} else {
 			err = k.mqProducer.SyncBroadcastMessage(ctx, key, value)
 		}
 
@@ -313,6 +316,38 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 	defer tick.Stop()
 
 	flushToProducer := func() error {
+		if k.protocol == codec.ProtocolCanal {
+			return k.statistics.RecordBatchExecution(func() (int, error) {
+				if batchSize == 0 {
+					return 0, nil
+				}
+				_, resolvedTxnsMap := splitResolvedTxn(k.partitionResolvedTs[partition], k.partitionTxns[partition])
+				if len(resolvedTxnsMap) == 0 {
+					return 0, nil
+				}
+				sentSize := 0
+				for _, txns := range resolvedTxnsMap {
+					for _, txn := range txns {
+						encoder = k.newEncoder()
+						for _, row := range txn.Rows {
+							err := encoder.AppendRowChangedEvent(row)
+							if err != nil {
+								return 0, errors.Trace(err)
+							}
+							sentSize++
+						}
+						key, value := encoder.Build()
+						err := k.mqProducer.AsyncSendMessage(ctx, key, value, partition)
+						if err != nil {
+							return sentSize, errors.Trace(err)
+						}
+					}
+				}
+				thisBatchSize := batchSize
+				batchSize = 0
+				return thisBatchSize, nil
+			})
+		}
 		return k.statistics.RecordBatchExecution(func() (int, error) {
 			if batchSize == 0 {
 				return 0, nil
@@ -333,10 +368,6 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-tick.C:
-			// canal messages should not flush until the call of flushRowChangeEvent
-			if k.protocol == codec.ProtocolCanal {
-				continue
-			}
 			if err := flushToProducer(); err != nil {
 				return errors.Trace(err)
 			}
@@ -351,19 +382,41 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 				atomic.StoreUint64(&k.partitionResolvedTs[partition], e.resolvedTs)
 				k.resolvedNotifier.Notify()
 			}
-			continue
-		}
-		err := encoder.AppendRowChangedEvent(e.row)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		batchSize++
-		// This is only a temporary fix so that the Avro encoder does not overflow.
-		// Pending further refactoring
-		if encoder.Size() >= batchSizeLimit || (k.protocol == codec.ProtocolAvro && encoder.Size() >= 1) {
-			if err := flushToProducer(); err != nil {
-				return errors.Trace(err)
+		} else {
+			if k.protocol == codec.ProtocolCanal {
+				key := *e.row.Table
+				txns := k.partitionTxns[partition][key]
+				if len(txns) == 0 || txns[len(txns)-1].StartTs != e.row.StartTs {
+					// fail-fast check
+					if len(txns) != 0 && txns[len(txns)-1].CommitTs > e.row.CommitTs {
+						log.Fatal("the commitTs of the emit row is less than the received row",
+							zap.Stringer("table", e.row.Table),
+							zap.Uint64("emit row startTs", e.row.StartTs),
+							zap.Uint64("emit row commitTs", e.row.CommitTs),
+							zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
+							zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
+					}
+					txns = append(txns, &model.Txn{
+						StartTs:  e.row.StartTs,
+						CommitTs: e.row.CommitTs,
+					})
+					k.partitionTxns[partition][key] = txns
+				}
+				txns[len(txns)-1].Append(e.row)
+			}else{
+				err := encoder.AppendRowChangedEvent(e.row)
+				if err != nil {
+					return errors.Trace(err)
+				}
+				// This is only a temporary fix so that the Avro encoder does not overflow.
+				// Pending further refactoring
+				if encoder.Size() >= batchSizeLimit || (k.protocol == codec.ProtocolAvro && encoder.Size() >= 1) {
+					if err := flushToProducer(); err != nil {
+						return errors.Trace(err)
+					}
+				}
 			}
+			batchSize++
 		}
 	}
 }

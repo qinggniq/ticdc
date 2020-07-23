@@ -42,4 +42,4 @@ CREATE TABLE many_cols5 (
 ALTER TABLE many_cols5 DROP COLUMN col0;
 INSERT INTO many_cols5 (val) VALUES (1);
 
-CREATE TABLE finish_mark(a int primary key)
+CREATE TABLE finish_mark(a int primary key);

@@ -33,7 +33,7 @@ worker-num = 4
 [sink]
 protocol = "canal"
 dispatchers = [
-	{matcher = ['.*'], dispatcher = "table"},
+	{matcher = ['*.*'], dispatcher = "table"},
 ]
 EOF
     run_cdc_cli changefeed create --start-ts=$start_ts --config="$WORK_DIR/changefeed.toml" --sink-uri="$SINK_URI"

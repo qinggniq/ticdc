@@ -62,6 +62,8 @@ func (es *EntrySorter) Run(ctx context.Context) error {
 
 	lessFunc := func(i *model.PolymorphicEvent, j *model.PolymorphicEvent) bool {
 		if i.CRTs == j.CRTs {
+			log.Info("compare same i", zap.Uint64("CRTs", i.CRTs), zap.String("content - key", string(i.RawKV.Key)), zap.String("content - value", string(i.RawKV.Value)))
+			log.Info("compare same j", zap.Uint64("CRTs", j.CRTs), zap.String("content - key", string(j.RawKV.Key)), zap.String("content - value", string(j.RawKV.Value)))
 			if i.RawKV.OpType == model.OpTypeDelete {
 				return true
 			}

@@ -23,7 +23,7 @@ function run() {
     TOPIC_NAME="ticdc-ddl-sequence-test-$RANDOM"
     case $SINK_TYPE in
         kafka) SINK_URI="kafka://127.0.0.1:9092/$TOPIC_NAME?partition-num=4";;
-        *) SINK_URI="mysql://root@127.0.0.1:3306/";;
+        *) SINK_URI="mysql://root@127.0.0.1:3333/";;
     esac
     run_cdc_cli changefeed create --start-ts=$start_ts --sink-uri="$SINK_URI"
     if [ "$SINK_TYPE" == "kafka" ]; then
@@ -34,6 +34,7 @@ function run() {
     check_table_exists ddl_sequence.finish_mark ${DOWN_TIDB_HOST} ${DOWN_TIDB_PORT}
     check_sync_diff $WORK_DIR $CUR/conf/diff_config.toml
 
+    sleep 100000
     cleanup_process $CDC_BINARY
 }
 

@@ -311,6 +311,7 @@ func (d *CanalEventBatchEncoder) AppendResolvedEvent(ts uint64) error {
 // AppendRowChangedEvent implements the EventBatchEncoder interface
 func (d *CanalEventBatchEncoder) AppendRowChangedEvent(e *model.RowChangedEvent) error {
 	entry, err := d.entryBuilder.FromRowEvent(e)
+
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -356,7 +357,8 @@ func (d *CanalEventBatchEncoder) Size() int {
 	if err != nil {
 		panic(err)
 	}
-	return proto.Size(d.packet)
+	return len(d.messages.Messages)
+	//return proto.Size(d.packet)
 }
 
 // refreshPacketBody() marshals the messages to the packet body
@@ -387,5 +389,3 @@ func NewCanalEventBatchEncoder() EventBatchEncoder {
 	}
 	return encoder
 }
-
-
