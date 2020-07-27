@@ -357,8 +357,7 @@ func (d *CanalEventBatchEncoder) Size() int {
 	if err != nil {
 		panic(err)
 	}
-	return len(d.messages.Messages)
-	//return proto.Size(d.packet)
+	return proto.Size(d.packet)
 }
 
 // refreshPacketBody() marshals the messages to the packet body

@@ -10,6 +10,8 @@ case-sensitive = true
 # 忽略哪些 StartTs 的事务
 # Transactions with the following StartTs will be ignored
 ignore-txn-start-ts = [1, 2]
+# 忽略和alibaba canal consumer不兼容的字段类型
+ignore-column-type = ['year', 'bit']
 
 # 过滤器规则
 # 过滤规则语法：https://docs.pingcap.com/zh/tidb/stable/table-filter#%E8%A1%A8%E5%BA%93%E8%BF%87%E6%BB%A4%E8%AF%AD%E6%B3%95

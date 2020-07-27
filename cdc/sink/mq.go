@@ -133,7 +133,7 @@ func newMqSink(
 
 func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
 	for _, row := range rows {
-		if k.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table) {
+		if k.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table, row.GetColumnTypes()) {
 			log.Info("Row changed event ignored", zap.Uint64("start-ts", row.StartTs))
 			continue
 		}
@@ -212,7 +212,7 @@ func (k *mqSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {
 }
 
 func (k *mqSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
-	if k.filter.ShouldIgnoreDDLEvent(ddl.StartTs, ddl.Schema, ddl.Table) {
+	if k.filter.ShouldIgnoreDDLEvent(ddl.StartTs, ddl.Schema, ddl.Table, ddl.GetColumnTypes()) {
 		log.Info(
 			"DDL event ignored",
 			zap.String("query", ddl.Query),
@@ -332,10 +332,10 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 						for _, row := range txn.Rows {
 							err := encoder.AppendRowChangedEvent(row)
 							if err != nil {
-								return 0, errors.Trace(err)
+								return sentSize, errors.Trace(err)
 							}
-							sentSize++
 						}
+						sentSize += len(txn.Rows)
 						key, value := encoder.Build()
 						err := k.mqProducer.AsyncSendMessage(ctx, key, value, partition)
 						if err != nil {
@@ -343,9 +343,8 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 						}
 					}
 				}
-				thisBatchSize := batchSize
-				batchSize = 0
-				return thisBatchSize, nil
+				batchSize -= sentSize
+				return sentSize, nil
 			})
 		}
 		return k.statistics.RecordBatchExecution(func() (int, error) {
@@ -385,36 +384,19 @@ func (k *mqSink) runWorker(ctx context.Context, partition int32) error {
 			}
 		} else {
 			if k.protocol == codec.ProtocolCanal {
-				key := *e.row.Table
-				txns := k.partitionTxns[partition][key]
-				if len(txns) == 0 || txns[len(txns)-1].StartTs != e.row.StartTs {
-					// fail-fast check
-					if len(txns) != 0 && txns[len(txns)-1].CommitTs > e.row.CommitTs {
-						log.Fatal("the commitTs of the emit row is less than the received row",
-							zap.Stringer("table", e.row.Table),
-							zap.Uint64("emit row startTs", e.row.StartTs),
-							zap.Uint64("emit row commitTs", e.row.CommitTs),
-							zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
-							zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
-					}
-					txns = append(txns, &model.Txn{
-						StartTs:  e.row.StartTs,
-						CommitTs: e.row.CommitTs,
-					})
-					k.partitionTxns[partition][key] = txns
-				}
-				txns[len(txns)-1].Append(e.row)
-			}else{
+				appendRowChangeEvent(k.partitionTxns[partition], e.row)
+			} else {
 				err := encoder.AppendRowChangedEvent(e.row)
 				if err != nil {
 					return errors.Trace(err)
 				}
-				// This is only a temporary fix so that the Avro encoder does not overflow.
-				// Pending further refactoring
-				if encoder.Size() >= batchSizeLimit || (k.protocol == codec.ProtocolAvro && encoder.Size() >= 1) {
-					if err := flushToProducer(); err != nil {
-						return errors.Trace(err)
-					}
+			}
+			// This is only a temporary fix so that the Avro encoder does not overflow.
+			// Pending further refactoring
+			// canal encoder is now always empty, so just assume 256 byte peer rowsChangeEvent.
+			if encoder.Size() >= batchSizeLimit || (k.protocol == codec.ProtocolAvro && encoder.Size() >= 1) || (k.protocol == codec.ProtocolCanal && batchSize >= batchSizeLimit/256) {
+				if err := flushToProducer(); err != nil {
+					return errors.Trace(err)
 				}
 			}
 			batchSize++

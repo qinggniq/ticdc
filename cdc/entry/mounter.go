@@ -416,7 +416,7 @@ func (m *mounterImpl) mountRowKVEntry(tableInfo *TableInfo, row *rowKVEntry) (*m
 					Type:  col.Tp,
 					Value: getDefaultOrZeroValue(col),
 
-					Flag:  transColumnFlag(col),
+					Flag: transColumnFlag(col),
 				}
 				if tableInfo.IsColumnUnique(col.ID) {
 					whereHandle := true

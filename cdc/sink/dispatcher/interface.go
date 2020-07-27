@@ -21,7 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pingcap/ticdc/cdc/model"
-	`github.com/pingcap/ticdc/cdc/sink/codec`
+	"github.com/pingcap/ticdc/cdc/sink/codec"
 	"github.com/pingcap/ticdc/pkg/config"
 )
 
@@ -103,7 +103,6 @@ func NewDispatcher(cfg *config.ReplicaConfig, partitionNum int32) (Dispatcher, e
 		var d Dispatcher
 		var rule dispatchRule
 		rule.fromString(ruleConfig.Dispatcher)
-		log.Info("[qingngiq] dispatcher", zap.String("protocol", cfg.Sink.Protocol), zap.String("rule", ruleConfig.Dispatcher))
 		switch rule {
 		case dispatchRuleRowID:
 			d = &rowIDDispatcher{partitionNum: partitionNum}

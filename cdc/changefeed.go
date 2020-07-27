@@ -22,6 +22,10 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	timodel "github.com/pingcap/parser/model"
+	"github.com/pingcap/tidb/sessionctx/binloginfo"
+	"go.etcd.io/etcd/mvcc/mvccpb"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/ticdc/cdc/entry"
 	"github.com/pingcap/ticdc/cdc/kv"
 	"github.com/pingcap/ticdc/cdc/model"
@@ -29,9 +33,6 @@ import (
 	"github.com/pingcap/ticdc/pkg/cyclic/mark"
 	"github.com/pingcap/ticdc/pkg/filter"
 	"github.com/pingcap/ticdc/pkg/scheduler"
-	"github.com/pingcap/tidb/sessionctx/binloginfo"
-	"go.etcd.io/etcd/mvcc/mvccpb"
-	"go.uber.org/zap"
 )
 
 type tableIDMap = map[model.TableID]struct{}

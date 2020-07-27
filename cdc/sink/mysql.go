@@ -34,6 +34,12 @@ import (
 	timodel "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/parser/terror"
+	tddl "github.com/pingcap/tidb/ddl"
+	"github.com/pingcap/tidb/infoschema"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/pingcap/ticdc/cdc/model"
 	"github.com/pingcap/ticdc/pkg/config"
 	"github.com/pingcap/ticdc/pkg/cyclic"
@@ -44,11 +50,6 @@ import (
 	"github.com/pingcap/ticdc/pkg/retry"
 	"github.com/pingcap/ticdc/pkg/security"
 	"github.com/pingcap/ticdc/pkg/util"
-	tddl "github.com/pingcap/tidb/ddl"
-	"github.com/pingcap/tidb/infoschema"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -81,29 +82,11 @@ func (s *mysqlSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.Row
 	s.unresolvedTxnsMu.Lock()
 	defer s.unresolvedTxnsMu.Unlock()
 	for _, row := range rows {
-		if s.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table) {
+		if s.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table, row.GetColumnTypes()) {
 			log.Info("Row changed event ignored", zap.Uint64("start-ts", row.StartTs))
 			continue
 		}
-		key := *row.Table
-		txns := s.unresolvedTxns[key]
-		if len(txns) == 0 || txns[len(txns)-1].StartTs != row.StartTs {
-			// fail-fast check
-			if len(txns) != 0 && txns[len(txns)-1].CommitTs > row.CommitTs {
-				log.Fatal("the commitTs of the emit row is less than the received row",
-					zap.Stringer("table", row.Table),
-					zap.Uint64("emit row startTs", row.StartTs),
-					zap.Uint64("emit row commitTs", row.CommitTs),
-					zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
-					zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
-			}
-			txns = append(txns, &model.Txn{
-				StartTs:  row.StartTs,
-				CommitTs: row.CommitTs,
-			})
-			s.unresolvedTxns[key] = txns
-		}
-		txns[len(txns)-1].Append(row)
+		appendRowChangeEvent(s.unresolvedTxns, row)
 	}
 	return nil
 }
@@ -148,7 +131,7 @@ func (s *mysqlSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {
 }
 
 func (s *mysqlSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
-	if s.filter.ShouldIgnoreDDLEvent(ddl.StartTs, ddl.Schema, ddl.Table) {
+	if s.filter.ShouldIgnoreDDLEvent(ddl.StartTs, ddl.Schema, ddl.Table, ddl.GetColumnTypes()) {
 		log.Info(
 			"DDL event ignored",
 			zap.String("query", ddl.Query),
@@ -215,6 +198,28 @@ func (s *mysqlSink) execDDL(ctx context.Context, ddl *model.DDLEvent) error {
 
 	log.Info("Exec DDL succeeded", zap.String("sql", ddl.Query))
 	return nil
+}
+
+func appendRowChangeEvent(unresolvedTxns map[model.TableName][]*model.Txn, row *model.RowChangedEvent) {
+	key := *row.Table
+	txns := unresolvedTxns[key]
+	if len(txns) == 0 || txns[len(txns)-1].StartTs != row.StartTs {
+		// fail-fast check
+		if len(txns) != 0 && txns[len(txns)-1].CommitTs > row.CommitTs {
+			log.Fatal("the commitTs of the emit row is less than the received row",
+				zap.Stringer("table", row.Table),
+				zap.Uint64("emit row startTs", row.StartTs),
+				zap.Uint64("emit row commitTs", row.CommitTs),
+				zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
+				zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
+		}
+		txns = append(txns, &model.Txn{
+			StartTs:  row.StartTs,
+			CommitTs: row.CommitTs,
+		})
+		unresolvedTxns[key] = txns
+	}
+	txns[len(txns)-1].Append(row)
 }
 
 func splitResolvedTxn(
