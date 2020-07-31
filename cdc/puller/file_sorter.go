@@ -252,7 +252,7 @@ func (h *sortHeap) Pop() interface{} {
 	return x
 }
 
-const defaultBatchSize = 8 * 1024 * 2014
+
 
 // readPolymorphicEvent reads PolymorphicEvents from file reader and also advance reader
 // TODO: batch read
@@ -403,7 +403,6 @@ func (fs *FileSorter) rotate(ctx context.Context, resolvedTs uint64) error {
 		readers = append(readers, rd)
 	}
 
-
 	// merge data from all sorted files, output events with ts less than resolvedTs,
 	// the rest events will be rewritten into the new lastSortedFile
 	h := &sortHeap{}
@@ -412,7 +411,7 @@ func (fs *FileSorter) rotate(ctx context.Context, resolvedTs uint64) error {
 	itemLastIdexs := make([]int, len(readers))
 	rowCount := 0
 	for i, fd := range readers {
-		evs, err := readPolymorphicEvent(fd, readBuf, defaultBatchSize)
+		evs, err := readPolymorphicEvent(fd, readBuf, 4096)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -420,7 +419,7 @@ func (fs *FileSorter) rotate(ctx context.Context, resolvedTs uint64) error {
 			continue
 		}
 		for j, ev := range evs {
-			heap.Push(h, &sortItem{entry: ev, fileIndex: i, itemIndex:j})
+			heap.Push(h, &sortItem{entry: ev, fileIndex: i, itemIndex: j})
 		}
 		itemLastIdexs[i] = len(evs) - 1
 	}
@@ -454,16 +453,16 @@ func (fs *FileSorter) rotate(ctx context.Context, resolvedTs uint64) error {
 			}
 		}
 		if item.itemIndex == itemLastIdexs[item.fileIndex] {
-			evs, err := readPolymorphicEvent(readers[item.fileIndex], readBuf, defaultBatchSize)
+			evs, err := readPolymorphicEvent(readers[item.fileIndex], readBuf, 4096)
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if len(evs) == 0{
+			if len(evs) == 0 {
 				// all events in this file have been consumed
 				continue
 			}
 			for i, ev := range evs {
-				heap.Push(h, &sortItem{entry: ev, fileIndex: item.fileIndex, itemIndex:itemLastIdexs[item.fileIndex] + 1 + i})
+				heap.Push(h, &sortItem{entry: ev, fileIndex: item.fileIndex, itemIndex: itemLastIdexs[item.fileIndex] + 1 + i})
 			}
 			itemLastIdexs[item.fileIndex] += len(evs)
 		}
