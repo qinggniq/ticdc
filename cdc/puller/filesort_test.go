@@ -22,21 +22,20 @@ import (
 )
 
 var (
-	DateDir        = "/tmp"
-	EventNumber    = 10000
-	FileNum        = 1
-	EventSize      = 1024
+	EventNumber = *flag.Int("eventnumber", 10000, "eventnumber=<number of event> default=10000")
+	FileNum     = *flag.Int("filenumber", 1, "filenumber=<number of file> default=1")
+	DateDir     = *flag.String("datadir", "/tmp", "datadir=<file dir> default=/tmp")
+	EventSize      = *flag.Int("eventsize", 1024, "eventsize=<size of every event> default=1024")
 	defaultBufSize = 512
 )
 
-func init() {
-	flag.IntVar(&EventNumber, "eventnumber", 10000, "eventnumber=<number of event> default=10000")
-	flag.IntVar(&FileNum, "filenumber", 1, "filenumber=<number of file> default=1")
-	flag.IntVar(&EventSize, "eventsize", 1024, "eventsize=<size of every event> default=1024")
-	flag.StringVar(&DateDir, "datadir", "/tmp", "datadir=<file dir> default=/tmp")
+func TestMain(m *testing.M) {
+	// call flag.Parse() here if TestMain uses flags
+
 	defaultBufSize = EventSize / 2
 	prepareData("msgpack")
 	prepareData("gob")
+	os.Exit(m.Run())
 }
 
 func genDataPath(eventNumber int, eventSize int, idx int, encodeType string) string {
@@ -335,6 +334,27 @@ func BenchmarkGobParseBufMmapSingle(b *testing.B) {
 		res, _ := NewMmapReader(file.Name())
 		return res
 	}, parsePolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBuf4KSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*4)
+	}, parseMsgpackPolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBuf8KSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*8)
+	}, parseMsgpackPolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBuf512KSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*512)
+	}, parseMsgpackPolymorphicEventSingle)
 }
 
 func BenchmarkMsgpackParseBuf4MSingle(b *testing.B) {
