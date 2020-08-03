@@ -5,63 +5,60 @@ import (
 	`bytes`
 	`encoding/binary`
 	`encoding/gob`
+	`flag`
 	`io`
 	`log`
 	`math/rand`
 	`os`
+	`path`
 	`strconv`
+	`strings`
 	`testing`
 
 	`github.com/pingcap/errors`
+	`github.com/vmihailenco/msgpack/v5`
 
 	`github.com/pingcap/ticdc/cdc/model`
 )
 
-const startBufSize = 4096 // Size of initial allocation for buffer.
+var (
+	DateDir        = "/tmp"
+	EventNumber    = 10000
+	FileNum        = 1
+	EventSize      = 1024
+	defaultBufSize = 512
+)
 
-func readPolymorphicEventBatch(rd *bufio.Reader, readBuf *bytes.Reader, batchSize int) ([]*model.PolymorphicEvent, error) {
-	var readSize int
-	var byteLen [8]byte
-	buf := make([]byte, 128)
-	evs := make([]*model.PolymorphicEvent, 0, batchSize/128)
+func init() {
+	flag.IntVar(&EventNumber, "eventnumber", 10000, "eventnumber=<number of event> default=10000")
+	flag.IntVar(&FileNum, "filenumber", 1, "filenumber=<number of file> default=1")
+	flag.IntVar(&EventSize, "eventsize", 1024, "eventsize=<size of every event> default=1024")
+	flag.StringVar(&DateDir, "datadir", "/tmp", "datadir=<file dir> default=/tmp")
+	defaultBufSize = EventSize / 2
+	prepareData("msgpack")
+	prepareData("gob")
+}
 
-	getBuf := func(dataLen int) []byte {
-		if dataLen > len(buf) {
-			buf = make([]byte, dataLen*2) // append(buf[:cap(buf)], make([]byte, dataLen-cap(buf))...)
-		}
-		return buf[:dataLen]
-	}
-	for readSize < batchSize {
-		n, err := io.ReadFull(rd, byteLen[:])
-		if err != nil {
-			if err == io.EOF {
-				return evs, nil
+func genDataPath(eventNumber int, eventSize int, idx int, encodeType string) string {
+	return path.Join(DateDir, strings.Join([]string{
+		strconv.FormatInt(int64(eventNumber), 10),
+		strconv.FormatInt(int64(eventSize), 10),
+		strconv.FormatInt(int64(idx), 10),
+		encodeType,
+	}, "-"))
+}
+
+func prepareData(encodeType string) {
+	data = generatePolymorphicEvents(EventSize)
+	for i := 0; i < FileNum; i++ {
+		fileName := genDataPath(EventNumber, EventSize, i, encodeType)
+		if _, err := os.Stat(fileName); os.IsNotExist(err) {
+			_, err := writeEventsToFile(fileName, data, encodeType)
+			if err != nil {
+				log.Printf("write data to file %s %v", fileName, err)
 			}
-			return nil, errors.Trace(err)
 		}
-		if n < 8 {
-			return nil, errors.Errorf("invalid length data %s, read %d bytes", byteLen, n)
-		}
-		dataLen := int(binary.BigEndian.Uint64(byteLen[:]))
-		data := getBuf(dataLen)
-		n, err = io.ReadFull(rd, data)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		if n != dataLen {
-			return nil, errors.Errorf("truncated data %s n: %d dataLen: %d", data, n, dataLen)
-		}
-
-		//readBuf.Reset(data)
-		//ev := &model.PolymorphicEvent{}
-		//err = gob.NewDecoder(readBuf).Decode(ev)
-		//if err != nil {
-		//	return nil, errors.Trace(err)
-		//}
-		//evs = append(evs, ev)
-		readSize += 8 + dataLen
 	}
-	return evs, nil
 }
 
 func readPolymorphicEventSingle(rd io.Reader, readBuf *bytes.Reader) (*model.PolymorphicEvent, error) {
@@ -96,8 +93,70 @@ func readPolymorphicEventSingle(rd io.Reader, readBuf *bytes.Reader) (*model.Pol
 	return &model.PolymorphicEvent{}, nil
 }
 
-const defaultBufSize = 512
-const dataDir = "/tmp/"
+func parsePolymorphicEventSingle(rd io.Reader, readBuf *bytes.Reader) (*model.PolymorphicEvent, error) {
+	var byteLen [8]byte
+	n, err := io.ReadFull(rd, byteLen[:])
+	if err != nil {
+		if err == io.EOF {
+			return nil, nil
+		}
+		return nil, errors.Trace(err)
+	}
+	if n < 8 {
+		return nil, errors.Errorf("invalid length data %s, read %d bytes", byteLen, n)
+	}
+	dataLen := int(binary.BigEndian.Uint64(byteLen[:]))
+
+	data := make([]byte, dataLen)
+	n, err = io.ReadFull(rd, data)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	if n != dataLen {
+		return nil, errors.Errorf("truncated data %s n: %d dataLen: %d", data, n, dataLen)
+	}
+
+	readBuf.Reset(data)
+	ev := &model.PolymorphicEvent{}
+	err = gob.NewDecoder(readBuf).Decode(ev)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return &model.PolymorphicEvent{}, nil
+}
+
+func parseMsgpackPolymorphicEventSingle(rd io.Reader, readBuf *bytes.Reader) (*model.PolymorphicEvent, error) {
+	var byteLen [8]byte
+	n, err := io.ReadFull(rd, byteLen[:])
+	if err != nil {
+		if err == io.EOF {
+			return nil, nil
+		}
+		return nil, errors.Trace(err)
+	}
+	if n < 8 {
+		return nil, errors.Errorf("invalid length data %s, read %d bytes", byteLen, n)
+	}
+	dataLen := int(binary.BigEndian.Uint64(byteLen[:]))
+
+	data := make([]byte, dataLen)
+	n, err = io.ReadFull(rd, data)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	if n != dataLen {
+		return nil, errors.Errorf("truncated data %s n: %d dataLen: %d", data, n, dataLen)
+	}
+
+	readBuf.Reset(data)
+	ev := &model.PolymorphicEvent{}
+
+	err = msgpack.NewDecoder(readBuf).Decode(ev)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return &model.PolymorphicEvent{}, nil
+}
 
 var defaultBuf = make([]byte, defaultBufSize)
 
@@ -105,7 +164,7 @@ func generatePolymorphicEvent() *model.PolymorphicEvent {
 	randUint64 := rand.Uint64()
 	key := defaultBuf[:rand.Int()%defaultBufSize]
 	value := defaultBuf[:rand.Int()%defaultBufSize]
-	return &model.PolymorphicEvent{StartTs: randUint64, CRTs: randUint64, RawKV: &model.RawKVEntry{StartTs: randUint64, CRTs: randUint64, Key: key, Value: value}}
+	return &model.PolymorphicEvent{StartTs: randUint64, CRTs: randUint64, RawKV: &model.RawKVEntry{StartTs: randUint64, CRTs: randUint64, Key: key, Value: value}, Row: &model.RowChangedEvent{}}
 }
 
 func generatePolymorphicEvents(sz int) []*model.PolymorphicEvent {
@@ -119,7 +178,7 @@ func generatePolymorphicEvents(sz int) []*model.PolymorphicEvent {
 var data []*model.PolymorphicEvent
 
 // flushEventsToFile writes a slice of model.PolymorphicEvent to a given file in sequence
-func writeEventsToFile(fullpath string, entries []*model.PolymorphicEvent) (int, error) {
+func writeEventsToFile(fullpath string, entries []*model.PolymorphicEvent, encodeType string) (int, error) {
 	if len(entries) == 0 {
 		return 0, nil
 	}
@@ -129,7 +188,12 @@ func writeEventsToFile(fullpath string, entries []*model.PolymorphicEvent) (int,
 	var dataLen [8]byte
 	for _, entry := range entries {
 		dataBuf.Reset()
-		err = gob.NewEncoder(dataBuf).Encode(entry)
+		switch encodeType {
+		case "gob":
+			err = gob.NewEncoder(dataBuf).Encode(entry)
+		case "msgpack":
+			err = msgpack.NewEncoder(dataBuf).Encode(entry)
+		}
 		if err != nil {
 			return 0, errors.Trace(err)
 		}
@@ -156,87 +220,30 @@ func writeEventsToFile(fullpath string, entries []*model.PolymorphicEvent) (int,
 	return buf.Len(), nil
 }
 
-func prepareData(sz int, fileNum int) {
-	data = generatePolymorphicEvents(sz)
-	for i := 0; i < fileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(sz), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		if _, err := os.Stat(fileName); os.IsNotExist(err) {
-			_, err := writeEventsToFile(fileName, data)
-			if err != nil {
-				log.Printf("write data to file %s", fileName)
-			}
-		}
-	}
-}
-
-const EventNumbers = 10000
-const FileNum = 10
-
-func init() {
-	prepareData(EventNumbers, FileNum)
-}
-
-func BenchmarkBuf8KSingle(b *testing.B) {
-
+func baseBenchmark(b *testing.B, suffix string, getReader func(file *os.File) io.Reader, exec func(io.Reader, *bytes.Reader) (*model.PolymorphicEvent, error)) {
 	fds := make([]*os.File, 0, FileNum)
 	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
+		fileName := genDataPath(EventNumber, EventSize, i, suffix)
 		fd, err := os.Open(fileName)
 		if err != nil {
 			panic(err)
 		}
 		fds = append(fds, fd)
-
 	}
 	var readBuf bytes.Reader
 
-Loop:
 	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
+		readers := make([]io.Reader, 0, FileNum)
 		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*8))
+			readers = append(readers, getReader(fds[i]))
 		}
+	Loop:
 		for {
 			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
+				if ev, err := exec(readers[i], &readBuf); ev != nil && err == nil {
 
 				} else {
-					continue Loop
-				}
-			}
-		}
-
-	}
-	for i := 0; i < FileNum; i++ {
-		fds[i].Close()
-	}
-}
-
-func BenchmarkBuf512KSingle(b *testing.B) {
-	fds := make([]*os.File, 0, FileNum)
-	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		fd, err := os.Open(fileName)
-		if err != nil {
-			panic(err)
-		}
-		fds = append(fds, fd)
-
-	}
-	var readBuf bytes.Reader
-
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*512))
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
-
-				} else {
-					continue Loop
+					break Loop
 				}
 			}
 		}
@@ -246,213 +253,107 @@ Loop:
 	}
 }
 
-func BenchmarkBuf4KSingle(b *testing.B) {
-	fds := make([]*os.File, 0, FileNum)
-	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		fd, err := os.Open(fileName)
-		if err != nil {
-			panic(err)
-		}
-		fds = append(fds, fd)
-
-	}
-	var readBuf bytes.Reader
-
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*4))
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
-
-				} else {
-					continue Loop
-				}
-			}
-		}
-	}
-	for i := 0; i < FileNum; i++ {
-		fds[i].Close()
-	}
+func BenchmarkReadBuf4KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*4)
+	}, readPolymorphicEventSingle)
 }
 
-func BenchmarkBuf4MSingle(b *testing.B) {
-	fds := make([]*os.File, 0, FileNum)
-	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		fd, err := os.Open(fileName)
-		if err != nil {
-			panic(err)
-		}
-		fds = append(fds, fd)
-
-	}
-	var readBuf bytes.Reader
-
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*1024*4))
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
-
-				} else {
-					continue Loop
-				}
-			}
-		}
-	}
-	for i := 0; i < FileNum; i++ {
-		fds[i].Close()
-	}
+func BenchmarkReadBuf8KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*8)
+	}, readPolymorphicEventSingle)
 }
 
-func BenchmarkBuf16MSingle(b *testing.B) {
-	fds := make([]*os.File, 0, FileNum)
-	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		fd, err := os.Open(fileName)
-		if err != nil {
-			panic(err)
-		}
-		fds = append(fds, fd)
-
-	}
-	var readBuf bytes.Reader
-
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*1024*16))
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
-
-				} else {
-					continue Loop
-				}
-			}
-		}
-	}
-	for i := 0; i < FileNum; i++ {
-		fds[i].Close()
-	}
+func BenchmarkReadBuf512KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*512)
+	}, readPolymorphicEventSingle)
 }
 
-func BenchmarkBufMmapSingle(b *testing.B) {
-	var readBuf bytes.Reader
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*MmapReader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-			reader, err := NewMmapReader(fileName)
-			if err != nil {
-				panic(err)
-			}
-			readers = append(readers, reader)
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if ev, err := readPolymorphicEventSingle(readers[i], &readBuf); ev != nil && err == nil {
-
-				} else {
-					continue Loop
-				}
-			}
-		}
-	}
+func BenchmarkReadBuf4MSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*4)
+	}, readPolymorphicEventSingle)
 }
 
-const L2Cache = 256 * 1024
+func BenchmarkReadBuf16MSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*16)
+	}, readPolymorphicEventSingle)
+}
 
-//func BenchmarkBuf4KBatch256K(b *testing.B) {
-//	fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10)
-//	for i := 0; i < b.N; i++ {
-//		fd, err := os.Open(fileName)
-//		if err != nil {
-//			panic(err)
-//		}
-//		rd := bufio.NewReaderSize(fd, 1024*4)
-//		var readBuf bytes.Reader
-//		for evs, err := readPolymorphicEventBatch(rd, &readBuf, L2Cache); len(evs) != 0 && err == nil; evs, err = readPolymorphicEventBatch(rd, &readBuf, L2Cache) {
-//
-//		}
-//		_ = fd.Close()
-//	}
-//}
-//
-//func BenchmarkBuf8KBatch(b *testing.B) {
-//	fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10)
-//	for i := 0; i < b.N; i++ {
-//		fd, err := os.Open(fileName)
-//		if err != nil {
-//			panic(err)
-//		}
-//		rd := bufio.NewReaderSize(fd, 1024*8)
-//		var readBuf bytes.Reader
-//		for evs, err := readPolymorphicEventBatch(rd, &readBuf, L2Cache); len(evs) != 0 && err == nil; evs, err = readPolymorphicEventBatch(rd, &readBuf, L2Cache) {
-//
-//		}
-//		_ = fd.Close()
-//	}
-//}
-//
-//func BenchmarkBuf512KBatch(b *testing.B) {
-//	fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10)
-//	for i := 0; i < b.N; i++ {
-//		fd, err := os.Open(fileName)
-//		if err != nil {
-//			panic(err)
-//		}
-//		rd := bufio.NewReaderSize(fd, 1024*512)
-//		var readBuf bytes.Reader
-//		for evs, err := readPolymorphicEventBatch(rd, &readBuf, L2Cache); len(evs) != 0 && err == nil; evs, err = readPolymorphicEventBatch(rd, &readBuf, L2Cache) {
-//
-//		}
-//		_ = fd.Close()
-//	}
-//}
+func BenchmarkReadBufMmapSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		res, _ := NewMmapReader(file.Name())
+		return res
+	}, readPolymorphicEventSingle)
+}
 
-func BenchmarkBuf4MBatch(b *testing.B) {
-	fds := make([]*os.File, 0, FileNum)
-	for i := 0; i < FileNum; i++ {
-		fileName := dataDir + "file-sort-" + strconv.FormatInt(int64(EventNumbers), 10) + "-" + strconv.FormatInt(int64(i), 10)
-		fd, err := os.Open(fileName)
-		if err != nil {
-			panic(err)
-		}
-		fds = append(fds, fd)
+func BenchmarkGobParseBuf4KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*4)
+	}, parsePolymorphicEventSingle)
+}
 
-	}
-	var readBuf bytes.Reader
+func BenchmarkGobParseBuf8KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*8)
+	}, parsePolymorphicEventSingle)
+}
 
-Loop:
-	for j := 0; j < b.N; j++ {
-		readers := make([]*bufio.Reader, 0, FileNum)
-		for i := 0; i < FileNum; i++ {
-			readers = append(readers, bufio.NewReaderSize(fds[i], 1024*512))
-		}
-		for {
-			for i := 0; i < FileNum; i++ {
-				if evs, err := readPolymorphicEventBatch(readers[i], &readBuf, 1024*512); len(evs) != 0 && err == nil {
+func BenchmarkGobParseBuf512KSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*512)
+	}, parsePolymorphicEventSingle)
+}
 
-				} else {
-					continue Loop
-				}
-			}
-		}
-	}
-	for i := 0; i < FileNum; i++ {
-		fds[i].Close()
-	}
+func BenchmarkGobParseBuf4MSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*4)
+	}, parsePolymorphicEventSingle)
+}
+
+func BenchmarkGobParseBuf16MSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*16)
+	}, parsePolymorphicEventSingle)
+}
+
+func BenchmarkGobParseBufMmapSingle(b *testing.B) {
+	baseBenchmark(b, "gob", func(file *os.File) io.Reader {
+		res, _ := NewMmapReader(file.Name())
+		return res
+	}, parsePolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBuf4MSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*4)
+	}, parseMsgpackPolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBuf16MSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		_, _ = file.Seek(0, io.SeekStart)
+		return bufio.NewReaderSize(file, 1024*1024*16)
+	}, parseMsgpackPolymorphicEventSingle)
+}
+
+func BenchmarkMsgpackParseBufMmapSingle(b *testing.B) {
+	baseBenchmark(b, "msgpack", func(file *os.File) io.Reader {
+		res, _ := NewMmapReader(file.Name())
+		return res
+	}, parseMsgpackPolymorphicEventSingle)
 }

@@ -6,7 +6,6 @@ import (
 
 type MmapReader struct {
 	off    int64
-	end    int64
 	reader *mmap.ReaderAt
 }
 
@@ -17,15 +16,11 @@ func NewMmapReader(fileName string) (*MmapReader, error) {
 	}
 	return &MmapReader{
 		reader: reader,
-		end: int64(reader.Len()),
 	}, nil
 }
 
 func (reader *MmapReader) Read(p []byte) (n int, err error) {
-	reader.off += int64(len(p))
-	if reader.off > reader.end {
-		reader.off = reader.end
-	}
 	n, err = reader.reader.ReadAt(p, reader.off)
+	reader.off += int64(len(p))
 	return n, err
 }
