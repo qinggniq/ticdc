@@ -89,8 +89,9 @@ func Open(filename string) (*ReaderAt, error) {
 		}
 		println("mmap", r, p)
 	}
-	// Advise the kernel that the mmap is accessed randomly.
-	if err := unix.Madvise(data, syscall.MADV_SEQUENTIAL); err != nil {
+	// Advise the kernel that the mmap is accessed sequence.
+
+	if err := unix.Madvise(data, syscall.MADV_SEQUENTIAL | syscall.MADV_HUGEPAGE); err != nil {
 		return nil, fmt.Errorf("madvise: %s", err)
 	}
 	runtime.SetFinalizer(r, (*ReaderAt).Close)
