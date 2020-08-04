@@ -1,16 +1,12 @@
 package puller
 
-import (
-	`golang.org/x/exp/mmap`
-)
-
 type MmapReader struct {
 	off    int64
-	reader *mmap.ReaderAt
+	reader *ReaderAt
 }
 
 func NewMmapReader(fileName string) (*MmapReader, error) {
-	reader, err := mmap.Open(fileName)
+	reader, err := Open(fileName)
 	if err != nil {
 		return nil, err
 	}

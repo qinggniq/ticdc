@@ -40,6 +40,7 @@ func TestMain(m *testing.M) {
 
 func genDataPath(eventNumber int, eventSize int, idx int, encodeType string) string {
 	return path.Join(DateDir, strings.Join([]string{
+		"file-sort",
 		strconv.FormatInt(int64(eventNumber), 10),
 		strconv.FormatInt(int64(eventSize), 10),
 		strconv.FormatInt(int64(idx), 10),

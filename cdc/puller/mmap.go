@@ -7,6 +7,8 @@ import (
 	`os`
 	`runtime`
 	`syscall`
+
+	`golang.org/x/sys/unix`
 )
 
 
@@ -86,6 +88,10 @@ func Open(filename string) (*ReaderAt, error) {
 			p = &data[0]
 		}
 		println("mmap", r, p)
+	}
+	// Advise the kernel that the mmap is accessed randomly.
+	if err := unix.Madvise(data, syscall.MADV_SEQUENTIAL); err != nil {
+		return nil, fmt.Errorf("madvise: %s", err)
 	}
 	runtime.SetFinalizer(r, (*ReaderAt).Close)
 	return r, nil
