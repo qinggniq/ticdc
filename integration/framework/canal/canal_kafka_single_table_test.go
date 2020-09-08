@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package framework
+package canal
 
 import (
 	"database/sql"
@@ -21,15 +21,15 @@ import (
 )
 
 type emptyAvroSingleTableTask struct {
-	AvroSingleTableTask
+	CanalSingleTableTask
 }
 
 func TestAvroSingleTableTest_Prepare(t *testing.T) {
-	env := NewAvroKafkaDockerEnv("")
+	env := NewCanalKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
-	env.RunTest(&emptyAvroSingleTableTask{AvroSingleTableTask{TableName: "test"}})
+	env.RunTest(&emptyAvroSingleTableTask{CanalSingleTableTask{TableName: "test"}})
 
 	_, err := sql.Open("mysql", upstreamDSN+"testdb")
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestAvroSingleTableTest_Prepare(t *testing.T) {
 	_, err = sql.Open("mysql", downstreamDSN+"testdb")
 	require.NoError(t, err)
 
-	err = env.healthChecker()
+	err = env.HealthChecker()
 	require.NoError(t, err)
 
 	env.TearDown()

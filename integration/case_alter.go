@@ -15,6 +15,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/pingcap/ticdc/integration/framework/avro"
 	"math/rand"
 
 	"github.com/pingcap/errors"
@@ -23,7 +24,7 @@ import (
 
 //nolint:unused
 type alterCase struct {
-	framework.AvroSingleTableTask
+	avro.AvroSingleTableTask
 }
 
 func newAlterCase() *alterCase {

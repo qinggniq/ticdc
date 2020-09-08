@@ -16,11 +16,12 @@ package main
 import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/ticdc/integration/framework"
+	"github.com/pingcap/ticdc/integration/framework/avro"
 )
 
 //nolint:unused
 type simpleCase struct {
-	framework.AvroSingleTableTask
+	avro.AvroSingleTableTask
 }
 
 func newSimpleCase() *simpleCase {

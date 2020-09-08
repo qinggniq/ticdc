@@ -14,6 +14,7 @@
 package main
 
 import (
+	"github.com/pingcap/ticdc/integration/framework/avro"
 	"math"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 
 //nolint:unused
 type manyTypesCase struct {
-	framework.AvroSingleTableTask
+	avro.AvroSingleTableTask
 }
 
 func newManyTypesCase() *manyTypesCase {

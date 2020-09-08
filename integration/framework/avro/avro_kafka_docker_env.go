@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package framework
+package avro
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/pingcap/ticdc/integration/framework"
 	"io/ioutil"
 	"net/http"
 	"os/exec"
@@ -39,7 +40,7 @@ const (
 
 // AvroKafkaDockerEnv represents the docker-compose service defined in docker-compose-avro.yml
 type AvroKafkaDockerEnv struct {
-	dockerComposeOperator
+	framework.DockerComposeOperator
 }
 
 // NewAvroKafkaDockerEnv creates a new AvroKafkaDockerEnv
@@ -89,10 +90,10 @@ func NewAvroKafkaDockerEnv(dockerComposeFile string) *AvroKafkaDockerEnv {
 		file = dockerComposeFile
 	}
 
-	return &AvroKafkaDockerEnv{dockerComposeOperator{
-		fileName:      file,
-		controller:    controllerContainerName,
-		healthChecker: healthChecker,
+	return &AvroKafkaDockerEnv{framework.DockerComposeOperator{
+		FileName:      file,
+		Controller:    controllerContainerName,
+		HealthChecker: healthChecker,
 	}}
 }
 
@@ -103,7 +104,7 @@ func (e *AvroKafkaDockerEnv) Reset() {
 }
 
 // RunTest implements Environment
-func (e *AvroKafkaDockerEnv) RunTest(task Task) {
+func (e *AvroKafkaDockerEnv) RunTest(task framework.Task) {
 	cmdLine := "/cdc " + task.GetCDCProfile().String()
 	bytes, err := e.ExecInController(cmdLine)
 	if err != nil {
@@ -130,12 +131,12 @@ func (e *AvroKafkaDockerEnv) RunTest(task Task) {
 		log.Fatal("RunTest: cannot connect to downstream database", zap.Error(err))
 	}
 
-	taskCtx := &TaskContext{
+	taskCtx := &framework.TaskContext{
 		Upstream:   upstream,
 		Downstream: downstream,
-		env:        e,
-		waitForReady: func() error {
-			return retry.Run(time.Second, 120, e.healthChecker)
+		Env:        e,
+		WaitForReady: func() error {
+			return retry.Run(time.Second, 120, e.HealthChecker)
 		},
 		Ctx: context.Background(),
 	}
@@ -156,6 +157,6 @@ func (e *AvroKafkaDockerEnv) RunTest(task Task) {
 }
 
 // SetListener implements Environment. Currently unfinished, will be used to monitor Kafka output
-func (e *AvroKafkaDockerEnv) SetListener(states interface{}, listener MqListener) {
+func (e *AvroKafkaDockerEnv) SetListener(states interface{}, listener framework.MqListener) {
 	// TODO
 }

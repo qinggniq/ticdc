@@ -35,8 +35,8 @@ type Task interface {
 type TaskContext struct {
 	Upstream     *sql.DB
 	Downstream   *sql.DB
-	env          Environment
-	waitForReady func() error
+	Env          Environment
+	WaitForReady func() error
 	Ctx          context.Context
 }
 
@@ -44,6 +44,7 @@ type TaskContext struct {
 type CDCProfile struct {
 	PDUri   string
 	SinkURI string
+	ConfigFile string
 	Opts    map[string]string
 }
 

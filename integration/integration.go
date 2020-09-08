@@ -17,6 +17,7 @@ import (
 	"flag"
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/integration/framework"
+	"github.com/pingcap/ticdc/integration/framework/avro"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -33,7 +34,7 @@ func main() {
 	}
 
 	log.SetLevel(zapcore.DebugLevel)
-	env := framework.NewAvroKafkaDockerEnv(*dockerComposeFile)
+	env := avro.NewAvroKafkaDockerEnv(*dockerComposeFile)
 	env.Setup()
 
 	for i := range testCases {

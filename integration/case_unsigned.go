@@ -15,11 +15,12 @@ package main
 
 import (
 	"github.com/pingcap/ticdc/integration/framework"
+	"github.com/pingcap/ticdc/integration/framework/avro"
 )
 
 //nolint:unused
 type unsignedCase struct {
-	framework.AvroSingleTableTask
+	avro.AvroSingleTableTask
 }
 
 func newUnsignedCase() *unsignedCase {

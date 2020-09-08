@@ -11,12 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package framework
+package avro
 
 import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"github.com/pingcap/ticdc/integration/framework"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -38,8 +39,8 @@ func (a *AvroSingleTableTask) Name() string {
 }
 
 // GetCDCProfile implements Task
-func (a *AvroSingleTableTask) GetCDCProfile() *CDCProfile {
-	return &CDCProfile{
+func (a *AvroSingleTableTask) GetCDCProfile() *framework.CDCProfile {
+	return &framework.CDCProfile{
 		PDUri:   "http://upstream-pd:2379",
 		SinkURI: "kafka://kafka:9092/testdb_" + a.TableName + "?protocol=avro",
 		Opts:    map[string]string{"registry": "http://schema-registry:8081"},
@@ -47,7 +48,7 @@ func (a *AvroSingleTableTask) GetCDCProfile() *CDCProfile {
 }
 
 // Prepare implements Task
-func (a *AvroSingleTableTask) Prepare(taskContext *TaskContext) error {
+func (a *AvroSingleTableTask) Prepare(taskContext *framework.TaskContext) error {
 	err := taskContext.CreateDB("testdb")
 	if err != nil {
 		return err
@@ -120,7 +121,7 @@ func (a *AvroSingleTableTask) Prepare(taskContext *TaskContext) error {
 }
 
 // Run implements Task
-func (a *AvroSingleTableTask) Run(taskContext *TaskContext) error {
+func (a *AvroSingleTableTask) Run(taskContext *framework.TaskContext) error {
 	log.Warn("AvroSingleTableTask has been run")
 	return nil
 }

@@ -15,6 +15,7 @@ package main
 
 import (
 	"errors"
+	"github.com/pingcap/ticdc/integration/framework/avro"
 
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/integration/framework"
@@ -23,7 +24,7 @@ import (
 
 //nolint:unused
 type deleteCase struct {
-	framework.AvroSingleTableTask
+	avro.AvroSingleTableTask
 }
 
 func newDeleteCase() *deleteCase {

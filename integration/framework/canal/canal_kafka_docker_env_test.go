@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package framework
+package canal
 
 import (
+	"github.com/pingcap/ticdc/integration/framework"
 	"os/exec"
 	"testing"
 
@@ -21,8 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAvroKafkaDockerEnv_Basic(t *testing.T) {
-	env := NewAvroKafkaDockerEnv("")
+func TestCanalKafkaDockerEnv_Basic(t *testing.T) {
+	env := NewCanalKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
@@ -45,15 +46,16 @@ type dummyTask struct {
 	test *testing.T
 }
 
-func (t *dummyTask) Prepare(taskContext *TaskContext) error {
+func (t *dummyTask) Prepare(taskContext *framework.TaskContext) error {
 	return nil
 }
 
-func (t *dummyTask) GetCDCProfile() *CDCProfile {
-	return &CDCProfile{
+func (t *dummyTask) GetCDCProfile() *framework.CDCProfile {
+	return &framework.CDCProfile{
 		PDUri:   "http://upstream-pd:2379",
-		SinkURI: "kafka://kafka:9092/testdb_test?protocol=avro",
-		Opts:    map[string]string{"registry": "http://schema-registry:8081"},
+		SinkURI: "kafka://kafka:9092/testdb_test?protocol=canal",
+		Opts:    map[string]string{"force-handle-key-pkey": "true"},
+		ConfigFile: "/config/canal-test-config.toml",
 	}
 }
 
@@ -61,7 +63,7 @@ func (t *dummyTask) Name() string {
 	return "Dummy"
 }
 
-func (t *dummyTask) Run(taskContext *TaskContext) error {
+func (t *dummyTask) Run(taskContext *framework.TaskContext) error {
 	err := taskContext.Upstream.Ping()
 	require.NoError(t.test, err, "Pinging upstream failed")
 
@@ -75,8 +77,8 @@ func (t *dummyTask) Run(taskContext *TaskContext) error {
 	return nil
 }
 
-func TestAvroKafkaDockerEnv_RunTest(t *testing.T) {
-	env := NewAvroKafkaDockerEnv("")
+func TestCanalKafkaDockerEnv_RunTest(t *testing.T) {
+	env := NewCanalKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
