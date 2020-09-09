@@ -14,18 +14,15 @@
 package common
 
 import (
-	"sort"
-	"sync/atomic"
-
 	"github.com/pingcap/log"
 	"go.uber.org/zap"
+	"sort"
 
 	"github.com/pingcap/ticdc/cdc/model"
 )
 
 // UnresolvedTxnCache caches unresolved txns, not thread safe
 type UnresolvedTxnCache struct {
-	checkpointTs   uint64
 	unresolvedTxns map[model.TableID][]*model.SingleTableTxn
 }
 
@@ -62,9 +59,7 @@ func (c *UnresolvedTxnCache) Append(row *model.RowChangedEvent) {
 
 // Resolved returns resolved txns according to resolvedTs
 func (c *UnresolvedTxnCache) Resolved(resolvedTs uint64) map[model.TableID][]*model.SingleTableTxn {
-	if resolvedTs <= atomic.LoadUint64(&c.checkpointTs) {
-		return nil
-	}
+
 	if len(c.unresolvedTxns) == 0 {
 		return nil
 	}
@@ -77,10 +72,6 @@ func (c *UnresolvedTxnCache) Unresolved() map[model.TableID][]*model.SingleTable
 	return c.unresolvedTxns
 }
 
-// UpdateCheckpoint updates the checkpoint ts
-func (c *UnresolvedTxnCache) UpdateCheckpoint(checkpointTs uint64) {
-	atomic.StoreUint64(&c.checkpointTs, checkpointTs)
-}
 func splitResolvedTxn(
 	resolvedTs uint64, unresolvedTxns map[model.TableID][]*model.SingleTableTxn,
 ) (minTs uint64, resolvedRowsMap map[model.TableID][]*model.SingleTableTxn) {

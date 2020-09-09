@@ -32,7 +32,6 @@ import (
 	"github.com/pingcap/log"
 	timodel "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
-	"github.com/pingcap/parser/terror"
 	tddl "github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/infoschema"
 	"github.com/prometheus/client_golang/prometheus"
@@ -74,8 +73,9 @@ var (
 )
 
 type mysqlSink struct {
-	db     *sql.DB
-	params *sinkParams
+	db           *sql.DB
+	params       *sinkParams
+	checkpointTs uint64
 
 	filter *filter.Filter
 	cyclic *cyclic.Cyclic
@@ -98,6 +98,7 @@ type mysqlSink struct {
 
 func (s *mysqlSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
 	s.txnMutex.Lock()
+	defer s.txnMutex.Unlock()
 	appendRows := 0
 	for _, row := range rows {
 		if s.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table) {
@@ -105,6 +106,7 @@ func (s *mysqlSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.Row
 			continue
 		}
 		s.txnCache.Append(row)
+		appendRows++
 	}
 	s.statistics.AddRowsCount(appendRows)
 	return nil
@@ -140,12 +142,12 @@ func (s *mysqlSink) flushRowChangedEvents(ctx context.Context) {
 		case <-receiver.C:
 		}
 		resolvedTs := atomic.LoadUint64(&s.resolvedTs)
-		resolvedTxnsMap := s.txnCache.Resolved(resolvedTs)
+		resolvedTxnsMap := s.Resolved(resolvedTs)
 		if len(resolvedTxnsMap) == 0 {
 			for _, worker := range s.workers {
 				atomic.StoreUint64(&worker.checkpointTs, resolvedTs)
 			}
-			s.txnCache.UpdateCheckpoint(resolvedTs)
+			s.UpdateCheckpoint(resolvedTs)
 			continue
 		}
 
@@ -159,7 +161,7 @@ func (s *mysqlSink) flushRowChangedEvents(ctx context.Context) {
 		for _, worker := range s.workers {
 			atomic.StoreUint64(&worker.checkpointTs, resolvedTs)
 		}
-		s.txnCache.UpdateCheckpoint(resolvedTs)
+		s.UpdateCheckpoint(resolvedTs)
 	}
 }
 
@@ -180,6 +182,19 @@ func (s *mysqlSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error
 	}
 	err := s.execDDLWithMaxRetries(ctx, ddl, defaultDDLMaxRetryTime)
 	return errors.Trace(err)
+}
+
+func (s *mysqlSink) UpdateCheckpoint(checkpointTs uint64) {
+	atomic.StoreUint64(&s.checkpointTs, checkpointTs)
+}
+
+func (s *mysqlSink) Resolved(resolvedTs uint64) map[model.TableID][]*model.SingleTableTxn {
+	if resolvedTs <= atomic.LoadUint64(&s.checkpointTs) {
+		return nil
+	}
+	s.txnMutex.Lock()
+	defer s.txnMutex.Unlock()
+	return s.txnCache.Resolved(resolvedTs)
 }
 
 // Initialize is no-op for Mysql sink
@@ -966,13 +981,13 @@ func isIgnorableDDLError(err error) bool {
 	}
 }
 
-func getSQLErrCode(err error) (terror.ErrCode, bool) {
+func getSQLErrCode(err error) (errors.ErrCode, bool) {
 	mysqlErr, ok := errors.Cause(err).(*dmysql.MySQLError)
 	if !ok {
 		return -1, false
 	}
 
-	return terror.ErrCode(mysqlErr.Number), true
+	return errors.ErrCode(mysqlErr.Number), true
 }
 
 func buildColumnList(names []string) string {
