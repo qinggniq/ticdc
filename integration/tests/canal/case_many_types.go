@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package canal
 
 import (
-	"github.com/pingcap/ticdc/integration/framework/avro"
+	"github.com/pingcap/ticdc/integration/framework/canal"
 	"math"
 	"time"
 
@@ -23,12 +23,12 @@ import (
 
 //nolint:unused
 type manyTypesCase struct {
-	avro.AvroSingleTableTask
+	canal.CanalSingleTableTask
 }
 
 func newManyTypesCase() *manyTypesCase {
 	manyTypesCase := new(manyTypesCase)
-	manyTypesCase.AvroSingleTableTask.TableName = "test"
+	manyTypesCase.CanalSingleTableTask.TableName = "test"
 	return manyTypesCase
 }
 

@@ -112,9 +112,9 @@ func (a *AvroSingleTableTask) Prepare(taskContext *framework.TaskContext) error 
 		return errors.Errorf("Kafka Connect Rest API returned status code %d", resp.StatusCode)
 	}
 
-	if taskContext.waitForReady != nil {
+	if taskContext.WaitForReady != nil {
 		log.Info("Waiting for env to be ready")
-		return taskContext.waitForReady()
+		return taskContext.WaitForReady()
 	}
 
 	return nil

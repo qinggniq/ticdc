@@ -15,7 +15,11 @@ package canal
 
 import (
 	"database/sql"
+	"github.com/pingcap/errors"
 	"github.com/pingcap/ticdc/integration/framework"
+	"go.uber.org/zap"
+	"io/ioutil"
+	"net/http"
 	"time"
 
 	"github.com/pingcap/log"
@@ -31,23 +35,23 @@ type CanalSingleTableTask struct {
 }
 
 // Name implements Task
-func (a *CanalSingleTableTask) Name() string {
+func (c *CanalSingleTableTask) Name() string {
 	log.Warn("CanalSingleTableTask should be embedded in another Task")
-	return "CanalSingleTableTask-" + a.TableName
+	return "CanalSingleTableTask-" + c.TableName
 }
 
 // GetCDCProfile implements Task
-func (a *CanalSingleTableTask) GetCDCProfile() *framework.CDCProfile {
+func (c *CanalSingleTableTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
-		PDUri:   "http://upstream-pd:2379",
-		SinkURI: "kafka://kafka:9092/testdb?protocol=canal",
-		Opts:    map[string]string{"force-handle-key-pkey": "true"},
+		PDUri:      "http://upstream-pd:2379",
+		SinkURI:    "kafka://kafka:9092/testdb?protocol=canal",
+		Opts:       map[string]string{"force-handle-key-pkey": "true"},
 		ConfigFile: "/config/canal-test-config.toml",
 	}
 }
 
 // Prepare implements Task
-func (a *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error {
+func (c *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error {
 	err := taskContext.CreateDB(testDbName)
 	if err != nil {
 		return err
@@ -66,18 +70,44 @@ func (a *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error
 	}
 	taskContext.Downstream.SetConnMaxLifetime(5 * time.Second)
 
-	// TODO canal should check adapter state in here
-
+	if err = c.checkCanalAdapterState(); err != nil{
+		return err
+	}
 	if taskContext.WaitForReady != nil {
 		log.Info("Waiting for env to be ready")
 		return taskContext.WaitForReady()
 	}
+	return nil
+}
 
+func (c *CanalSingleTableTask) checkCanalAdapterState() error {
+	resp, err := http.Get(
+		"http://127.0.0.1:8081/destinations")
+	if err != nil {
+		return err
+	}
+
+	if resp.Body == nil {
+		return errors.New("Canal Adapter Rest API returned empty body, there is no subscript topic")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		str, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		log.Warn(
+			"Canal Adapter Rest API returned",
+			zap.Int("status", resp.StatusCode),
+			zap.ByteString("body", str))
+		return errors.Errorf("Kafka Connect Rest API returned status code %d", resp.StatusCode)
+	}
 	return nil
 }
 
 // Run implements Task
-func (a *CanalSingleTableTask) Run(taskContext *framework.TaskContext) error {
+func (c *CanalSingleTableTask) Run(taskContext *framework.TaskContext) error {
 	log.Warn("CanalSingleTableTask has been run")
 	return nil
 }

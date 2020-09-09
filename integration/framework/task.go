@@ -94,12 +94,19 @@ func (p *CDCProfile) String() string {
 
 	builder.WriteString("--sink-uri=" + p.SinkURI + " ")
 
+	if p.ConfigFile != "" {
+		builder.WriteString("--config=" + p.ConfigFile + " ")
+	}
+
 	if p.Opts == nil || len(p.Opts) == 0 {
 		return builder.String()
 	}
+
 
 	for k, v := range p.Opts {
 		builder.WriteString("--opts=\"" + k + "=" + v + "\" ")
 	}
 	return builder.String()
 }
+
+
