@@ -27,7 +27,7 @@ type deleteCase struct {
 	canal.CanalSingleTableTask
 }
 
-func newDeleteCase() *deleteCase {
+func NewDeleteCase() *deleteCase {
 	deleteCase := new(deleteCase)
 	deleteCase.CanalSingleTableTask.TableName = "test"
 	return deleteCase

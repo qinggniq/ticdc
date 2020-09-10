@@ -26,7 +26,7 @@ type manyTypesCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newManyTypesCase() *manyTypesCase {
+func NewManyTypesCase() *manyTypesCase {
 	manyTypesCase := new(manyTypesCase)
 	manyTypesCase.AvroSingleTableTask.TableName = "test"
 	return manyTypesCase

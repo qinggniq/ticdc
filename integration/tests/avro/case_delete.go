@@ -27,7 +27,7 @@ type deleteCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newDeleteCase() *deleteCase {
+func NewDeleteCase() *deleteCase {
 	deleteCase := new(deleteCase)
 	deleteCase.AvroSingleTableTask.TableName = "test"
 	return deleteCase

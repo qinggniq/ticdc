@@ -27,7 +27,7 @@ type alterCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newAlterCase() *alterCase {
+func NewAlterCase() *alterCase {
 	alterCase := new(alterCase)
 	alterCase.AvroSingleTableTask.TableName = "test"
 	return alterCase

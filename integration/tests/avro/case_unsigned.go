@@ -23,7 +23,7 @@ type unsignedCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newUnsignedCase() *unsignedCase {
+func NewUnsignedCase() *unsignedCase {
 	unsignedCase := new(unsignedCase)
 	unsignedCase.AvroSingleTableTask.TableName = "test"
 	return unsignedCase

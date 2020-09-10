@@ -24,7 +24,7 @@ type compositePKeyCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newCompositePKeyCase() *compositePKeyCase {
+func NewCompositePKeyCase() *compositePKeyCase {
 	compositePKeyCase := new(compositePKeyCase)
 	compositePKeyCase.AvroSingleTableTask.TableName = "test"
 	return compositePKeyCase

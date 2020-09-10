@@ -24,7 +24,7 @@ type simpleCase struct {
 	avro.AvroSingleTableTask
 }
 
-func newSimpleCase() *simpleCase {
+func NewSimpleCase() *simpleCase {
 	simpleCase := new(simpleCase)
 	simpleCase.AvroSingleTableTask.TableName = "test"
 	return simpleCase
