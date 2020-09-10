@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os/exec"
+	"path"
 	"time"
 
 	"github.com/integralist/go-findroot/find"
@@ -32,7 +33,7 @@ import (
 
 const (
 	healthCheckURI          = "http://127.0.0.1:18083"
-	dockerComposeFilePath   = "./docker-compose-avro.yml"
+	dockerComposeFilePath   = "/docker-compose-avro.yml"
 	controllerContainerName = "ticdc_controller_1"
 	upstreamDSN             = "root@tcp(127.0.0.1:4000)/"
 	downstreamDSN           = "root@tcp(127.0.0.1:5000)/"
@@ -85,7 +86,7 @@ func NewAvroKafkaDockerEnv(dockerComposeFile string) *AvroKafkaDockerEnv {
 		if err != nil {
 			log.Fatal("Could not find git repo root", zap.Error(err))
 		}
-		file = st.Path + dockerComposeFilePath
+		file = path.Join(st.Path, dockerComposeFilePath)
 	} else {
 		file = dockerComposeFile
 	}
