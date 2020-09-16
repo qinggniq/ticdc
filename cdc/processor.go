@@ -221,6 +221,7 @@ func newProcessor(
 		localResolvedNotifier: localResolvedNotifier,
 		localResolvedReceiver: localResolvedNotifier.NewReceiver(50 * time.Millisecond),
 
+		checkpointTs:              checkpointTs,
 		localCheckpointTsNotifier: localCheckpointTsNotifier,
 		localCheckpointTsReceiver: localCheckpointTsNotifier.NewReceiver(50 * time.Millisecond),
 
@@ -406,6 +407,10 @@ func (p *processor) positionWorker(ctx context.Context) error {
 			}
 		case <-p.localCheckpointTsReceiver.C:
 			checkpointTs := atomic.LoadUint64(&p.checkpointTs)
+			if checkpointTs == 0 {
+				log.Warn("0 is not a valid checkpointTs")
+				continue
+			}
 			phyTs := oracle.ExtractPhysical(checkpointTs)
 			// It is more accurate to get tso from PD, but in most cases we have
 			// deployed NTP service, a little bias is acceptable here.
@@ -579,7 +584,7 @@ func (p *processor) removeTable(tableID int64) {
 // handleTables handles table scheduler on this processor, add or remove table puller
 func (p *processor) handleTables(ctx context.Context, status *model.TaskStatus) (tablesToRemove []model.TableID, err error) {
 	for tableID, opt := range status.Operation {
-		if opt.Done {
+		if opt.TableProcessed() {
 			continue
 		}
 		if opt.Delete {
@@ -588,6 +593,7 @@ func (p *processor) handleTables(ctx context.Context, status *model.TaskStatus) 
 				if !exist {
 					log.Warn("table which will be deleted is not found", zap.Int64("tableID", tableID))
 					opt.Done = true
+					opt.Status = model.OperFinished
 					continue
 				}
 				stopped, checkpointTs := table.safeStop()
@@ -598,6 +604,7 @@ func (p *processor) handleTables(ctx context.Context, status *model.TaskStatus) 
 					if checkpointTs <= p.position.CheckPointTs {
 						tablesToRemove = append(tablesToRemove, tableID)
 						opt.Done = true
+						opt.Status = model.OperFinished
 					}
 				}
 			}
@@ -610,6 +617,7 @@ func (p *processor) handleTables(ctx context.Context, status *model.TaskStatus) 
 				return tablesToRemove, cerror.ErrProcessorTableNotFound.GenWithStack("normal table(%d) and mark table not match ", tableID)
 			}
 			p.addTable(ctx, tableID, replicaInfo)
+			opt.Status = model.OperProcessed
 		}
 	}
 
@@ -626,6 +634,7 @@ func (p *processor) handleTables(ctx context.Context, status *model.TaskStatus) 
 				continue
 			}
 			status.Operation[tableID].Done = true
+			status.Operation[tableID].Status = model.OperFinished
 		default:
 			goto done
 		}

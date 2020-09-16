@@ -32,11 +32,7 @@ import (
 	"github.com/pingcap/log"
 	timodel "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
-	tddl "github.com/pingcap/tidb/ddl"
-	"github.com/pingcap/tidb/infoschema"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-
+	"github.com/pingcap/parser/terror"
 	"github.com/pingcap/ticdc/cdc/model"
 	"github.com/pingcap/ticdc/cdc/sink/common"
 	"github.com/pingcap/ticdc/pkg/config"
@@ -50,6 +46,10 @@ import (
 	"github.com/pingcap/ticdc/pkg/retry"
 	"github.com/pingcap/ticdc/pkg/security"
 	"github.com/pingcap/ticdc/pkg/util"
+	tddl "github.com/pingcap/tidb/ddl"
+	"github.com/pingcap/tidb/infoschema"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 )
 
 const (
@@ -1009,13 +1009,13 @@ func isIgnorableDDLError(err error) bool {
 	}
 }
 
-func getSQLErrCode(err error) (errors.ErrCode, bool) {
+func getSQLErrCode(err error) (terror.ErrCode, bool) {
 	mysqlErr, ok := errors.Cause(err).(*dmysql.MySQLError)
 	if !ok {
 		return -1, false
 	}
 
-	return errors.ErrCode(mysqlErr.Number), true
+	return terror.ErrCode(mysqlErr.Number), true
 }
 
 func buildColumnList(names []string) string {

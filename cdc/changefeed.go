@@ -743,7 +743,7 @@ func (c *changeFeed) calcResolvedTs(ctx context.Context) error {
 			minResolvedTs = appliedTs
 		}
 		if appliedTs != math.MaxUint64 {
-			log.Info("some operation is still unapplied",
+			log.Debug("some operation is still unapplied",
 				zap.String("captureID", captureID),
 				zap.Uint64("appliedTs", appliedTs),
 				zap.Stringer("status", status))
@@ -845,4 +845,16 @@ func (c *changeFeed) pullDDLJob() error {
 		c.ddlJobHistory = append(c.ddlJobHistory, ddl)
 	}
 	return nil
+}
+
+func (c *changeFeed) Close() {
+	err := c.ddlHandler.Close()
+	if err != nil {
+		log.Warn("failed to close ddl handler", zap.Error(err))
+	}
+	err = c.sink.Close()
+	if err != nil {
+		log.Warn("failed to close owner sink", zap.Error(err))
+	}
+	log.Info("changefeed closed", zap.String("id", c.id))
 }

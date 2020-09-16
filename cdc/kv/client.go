@@ -35,6 +35,7 @@ import (
 	"github.com/pingcap/ticdc/pkg/security"
 	"github.com/pingcap/ticdc/pkg/txnutil"
 	"github.com/pingcap/ticdc/pkg/util"
+	"github.com/pingcap/ticdc/pkg/version"
 	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/store/tikv"
 	"github.com/pingcap/tidb/store/tikv/oracle"
@@ -56,8 +57,11 @@ const (
 	tikvRequestMaxBackoff     = 20000   // Maximum total sleep time(in ms)
 	grpcInitialWindowSize     = 1 << 30 // The value for initial window size on a stream
 	grpcInitialConnWindowSize = 1 << 30 // The value for initial window size on a connection
-	grpcInitialMaxRecvMsgSize = 1 << 30 // The maximum message size the client can receive
+	grpcMaxCallRecvMsgSize    = 1 << 30 // The maximum message size the client can receive
 	grpcConnCount             = 10
+
+	// The threshold of warning a message is too large. TiKV split events into 6MB per-message.
+	warnRecvMsgSizeThreshold = 12 * 1024 * 1024
 )
 
 type singleRegionInfo struct {
@@ -192,7 +196,7 @@ func (a *connArray) Init(ctx context.Context) error {
 			grpcTLSOption,
 			grpc.WithInitialWindowSize(grpcInitialWindowSize),
 			grpc.WithInitialConnWindowSize(grpcInitialConnWindowSize),
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(grpcInitialMaxRecvMsgSize)),
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(grpcMaxCallRecvMsgSize)),
 			grpc.WithConnectParams(grpc.ConnectParams{
 				Backoff: gbackoff.Config{
 					BaseDelay:  time.Second,
@@ -207,7 +211,6 @@ func (a *connArray) Init(ctx context.Context) error {
 				Timeout:             3 * time.Second,
 				PermitWithoutStream: true,
 			}),
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(128*1024*1024)),
 		)
 		cancel()
 
@@ -341,7 +344,7 @@ func (c *CDCClient) newStream(ctx context.Context, addr string, storeID uint64) 
 			log.Info("get connection to store failed, retry later", zap.String("addr", addr), zap.Error(err))
 			return errors.Trace(err)
 		}
-		err = util.CheckStoreVersion(ctx, c.pd, storeID)
+		err = version.CheckStoreVersion(ctx, c.pd, storeID)
 		if err != nil {
 			log.Error("check tikv version failed", zap.Error(err), zap.Uint64("storeID", storeID))
 			return errors.Trace(err)
@@ -489,7 +492,10 @@ func (s *eventFeedSession) eventFeed(ctx context.Context, ts uint64) error {
 				return ctx.Err()
 			case errInfo := <-s.errCh:
 				s.errChSizeGauge.Dec()
-				s.handleError(ctx, errInfo, true)
+				err := s.handleError(ctx, errInfo, true)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	})
@@ -666,7 +672,8 @@ MainLoop:
 			regionID := rpcCtx.Meta.GetId()
 			req := &cdcpb.ChangeDataRequest{
 				Header: &cdcpb.Header{
-					ClusterId: s.client.clusterID,
+					ClusterId:    s.client.clusterID,
+					TicdcVersion: version.ReleaseSemver(),
 				},
 				RegionId:     regionID,
 				RequestId:    requestID,
@@ -944,7 +951,7 @@ func (s *eventFeedSession) divideAndSendEventFeedToRegions(
 // info will be sent to `regionCh`.
 // CAUTION: Note that this should only be invoked in a context that the region is not locked, otherwise use onRegionFail
 // instead.
-func (s *eventFeedSession) handleError(ctx context.Context, errInfo regionErrorInfo, blocking bool) {
+func (s *eventFeedSession) handleError(ctx context.Context, errInfo regionErrorInfo, blocking bool) error {
 	err := errInfo.err
 	switch eerr := errors.Cause(err).(type) {
 	case *eventError:
@@ -957,15 +964,21 @@ func (s *eventFeedSession) handleError(ctx context.Context, errInfo regionErrorI
 			// TODO: If only confver is updated, we don't need to reload the region from region cache.
 			metricFeedEpochNotMatchCounter.Inc()
 			s.scheduleDivideRegionAndRequest(ctx, errInfo.span, errInfo.ts, blocking)
-			return
+			return nil
 		} else if innerErr.GetRegionNotFound() != nil {
 			metricFeedRegionNotFoundCounter.Inc()
 			s.scheduleDivideRegionAndRequest(ctx, errInfo.span, errInfo.ts, blocking)
-			return
+			return nil
 		} else if duplicatedRequest := innerErr.GetDuplicateRequest(); duplicatedRequest != nil {
 			metricFeedDuplicateRequestCounter.Inc()
 			log.Fatal("tikv reported duplicated request to the same region, which is not expected",
 				zap.Uint64("regionID", duplicatedRequest.RegionId))
+			return nil
+		} else if compatibility := innerErr.GetCompatibility(); compatibility != nil {
+			log.Error("tikv reported compatibility error, which is not expected",
+				zap.Uint64("storeID", errInfo.rpcCtx.GetStoreID()),
+				zap.Stringer("error", compatibility))
+			return cerror.ErrVersionIncompatible.GenWithStackByArgs(compatibility)
 		} else {
 			metricFeedUnknownErrorCounter.Inc()
 			log.Warn("receive empty or unknown error msg", zap.Stringer("error", innerErr))
@@ -973,7 +986,7 @@ func (s *eventFeedSession) handleError(ctx context.Context, errInfo regionErrorI
 	case *rpcCtxUnavailableErr:
 		metricFeedRPCCtxUnavailable.Inc()
 		s.scheduleDivideRegionAndRequest(ctx, errInfo.span, errInfo.ts, blocking)
-		return
+		return nil
 	default:
 		bo := tikv.NewBackoffer(ctx, tikvRequestMaxBackoff)
 		if errInfo.rpcCtx.Meta != nil {
@@ -982,6 +995,7 @@ func (s *eventFeedSession) handleError(ctx context.Context, errInfo regionErrorI
 	}
 
 	s.scheduleRegionRequest(ctx, errInfo.singleRegionInfo, blocking)
+	return nil
 }
 
 func (s *eventFeedSession) getRPCContextForRegion(ctx context.Context, id tikv.RegionVerID) (*tikv.RPCContext, error) {
@@ -1061,6 +1075,17 @@ func (s *eventFeedSession) receiveFromStream(
 			// Do no return error but gracefully stop the goroutine here. Then the whole job will not be canceled and
 			// connection will be retried.
 			return nil
+		}
+
+		size := cevent.Size()
+		if size > warnRecvMsgSizeThreshold {
+			regionCount := 0
+			if cevent.ResolvedTs != nil {
+				regionCount = len(cevent.ResolvedTs.Regions)
+			}
+			log.Warn("change data event size too large",
+				zap.Int("size", size), zap.Int("event length", len(cevent.Events)),
+				zap.Int("resolved region count", regionCount))
 		}
 
 		for _, event := range cevent.Events {
