@@ -17,8 +17,8 @@ import (
 	"flag"
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/integration/framework"
-	"github.com/pingcap/ticdc/integration/framework/avro"
-	avro2 "github.com/pingcap/ticdc/integration/tests/avro"
+	"github.com/pingcap/ticdc/integration/framework/canal"
+	canal2 "github.com/pingcap/ticdc/integration/tests/canal"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -26,16 +26,16 @@ func main() {
 	dockerComposeFile := flag.String("docker-compose-file", "", "the path of the Docker-compose yml file")
 
 	testCases := []framework.Task{
-		avro2.NewSimpleCase(),
-		avro2.NewDeleteCase(),
-		avro2.NewManyTypesCase(),
-		avro2.NewUnsignedCase(),
-		avro2.NewCompositePKeyCase(),
-		avro2.NewAlterCase(), // this case is slow, so put it last
+		canal2.NewSimpleCase(),
+		canal2.NewDeleteCase(),
+		canal2.NewManyTypesCase(),
+		canal2.NewUnsignedCase(),
+		canal2.NewCompositePKeyCase(),
+		canal2.NewAlterCase(), // this case is slow, so put it last
 	}
 
 	log.SetLevel(zapcore.DebugLevel)
-	env := avro.NewAvroKafkaDockerEnv(*dockerComposeFile)
+	env := canal.NewCanalKafkaDockerEnv(*dockerComposeFile)
 	env.Setup()
 
 	for i := range testCases {

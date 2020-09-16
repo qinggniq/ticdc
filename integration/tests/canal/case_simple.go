@@ -24,7 +24,7 @@ type simpleCase struct {
 	canal.CanalSingleTableTask
 }
 
-func newSimpleCase() *simpleCase {
+func NewSimpleCase() *simpleCase {
 	simpleCase := new(simpleCase)
 	simpleCase.CanalSingleTableTask.TableName = "test"
 	return simpleCase

@@ -26,7 +26,7 @@ type manyTypesCase struct {
 	canal.CanalSingleTableTask
 }
 
-func newManyTypesCase() *manyTypesCase {
+func NewManyTypesCase() *manyTypesCase {
 	manyTypesCase := new(manyTypesCase)
 	manyTypesCase.CanalSingleTableTask.TableName = "test"
 	return manyTypesCase

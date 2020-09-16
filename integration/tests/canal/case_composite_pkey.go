@@ -24,7 +24,7 @@ type compositePKeyCase struct {
 	canal.CanalSingleTableTask
 }
 
-func newCompositePKeyCase() *compositePKeyCase {
+func NewCompositePKeyCase() *compositePKeyCase {
 	compositePKeyCase := new(compositePKeyCase)
 	compositePKeyCase.CanalSingleTableTask.TableName = "test"
 	return compositePKeyCase

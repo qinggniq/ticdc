@@ -27,7 +27,7 @@ type alterCase struct {
 	canal.CanalSingleTableTask
 }
 
-func newAlterCase() *alterCase {
+func NewAlterCase() *alterCase {
 	alterCase := new(alterCase)
 	alterCase.CanalSingleTableTask.TableName = "test"
 	return alterCase
