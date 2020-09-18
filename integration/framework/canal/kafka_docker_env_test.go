@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCanalKafkaDockerEnv_Basic(t *testing.T) {
+func TestKafkaDockerEnv_Basic(t *testing.T) {
 	env := NewKafkaDockerEnv("")
 	require.NotNil(t, env)
 
@@ -53,7 +53,7 @@ func (t *dummyTask) Prepare(taskContext *framework.TaskContext) error {
 func (t *dummyTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
 		PDUri:      "http://upstream-pd:2379",
-		SinkURI:    "kafka://kafka:9092/testdb_test?protocol=canal",
+		SinkURI:    "kafka://kafka:9092/testdb?protocol=canal",
 		Opts:       map[string]string{"force-handle-key-pkey": "true"},
 		ConfigFile: "/config/canal-test-config.toml",
 	}
