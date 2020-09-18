@@ -17,9 +17,8 @@ import (
 	"strings"
 
 	"github.com/pingcap/log"
-	"go.uber.org/zap"
-
 	"github.com/pingcap/ticdc/cdc/model"
+	"go.uber.org/zap"
 )
 
 // EventBatchEncoder is an abstraction for events encoder
@@ -36,11 +35,11 @@ type EventBatchEncoder interface {
 	EncodeDDLEvent(e *model.DDLEvent) (*MQMessage, error)
 	// Build builds the batch and returns the bytes of key and value.
 	Build() []*MQMessage
-	//	// MixedBuild builds the batch and returns the bytes of mixed keys and values.
-	//	// This is used for cdc log, to merge key and value into one byte slice
-	//	// when first create file, we should set withVersion to true, to tell us that
-	//	// the first 8 byte represents the encoder version
-	//	// TODO decouple it out
+	// MixedBuild builds the batch and returns the bytes of mixed keys and values.
+	// This is used for cdc log, to merge key and value into one byte slice
+	// when first create file, we should set withVersion to true, to tell us that
+	// the first 8 byte represents the encoder version
+	// TODO decouple it out
 	MixedBuild(withVersion bool) []byte
 	// Size returns the size of the batch(bytes)
 	Size() int

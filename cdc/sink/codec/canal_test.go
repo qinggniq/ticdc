@@ -55,8 +55,8 @@ var _ = check.Suite(&canalBatchSuite{
 		Table:    &model.TableName{Schema: "a", Table: "b"},
 		Columns:  []*model.Column{{Name: "col1", Type: 1, Value: "bb"}},
 	}, {
-		StartTs:  2,
-		CommitTs: 3,
+		StartTs:  3,
+		CommitTs: 4,
 		Table:    &model.TableName{Schema: "a", Table: "c", TableID: 6, IsPartition: true},
 		Columns:  []*model.Column{{Name: "col1", Type: 1, Value: "cc"}},
 	}}, {}},
@@ -117,13 +117,11 @@ func (s *canalBatchSuite) TestCanalEventBatchEncoder(c *check.C) {
 			c.Assert(err, check.IsNil)
 		}
 		_, _ = encoder.AppendResolvedEvent(mxCommitTs)
-		size := encoder.Size()
 		res := encoder.Build()
 		c.Assert(res, check.HasLen, s.rowCaseExpectValues[i].txnNumber)
 		for _, message := range res {
 			c.Assert(message.Key, check.IsNil)
 		}
-		c.Assert(len(cs), check.Equals, size)
 		for j := range res {
 			packet := &canal.Packet{}
 			err := proto.Unmarshal(res[j].Value, packet)
