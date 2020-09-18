@@ -21,12 +21,13 @@ import (
 
 //nolint:unused
 type simpleCase struct {
-	canal.CanalSingleTableTask
+	canal.SingleTableTask
 }
 
+// NewSimpleCase create a test case which has some simple dmls, ddls
 func NewSimpleCase() *simpleCase {
 	simpleCase := new(simpleCase)
-	simpleCase.CanalSingleTableTask.TableName = "test"
+	simpleCase.SingleTableTask.TableName = "test"
 	return simpleCase
 }
 

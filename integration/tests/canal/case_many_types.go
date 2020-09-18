@@ -23,12 +23,13 @@ import (
 
 //nolint:unused
 type manyTypesCase struct {
-	canal.CanalSingleTableTask
+	canal.SingleTableTask
 }
 
+// NewManyTypesCase create a test case which has many types
 func NewManyTypesCase() *manyTypesCase {
 	manyTypesCase := new(manyTypesCase)
-	manyTypesCase.CanalSingleTableTask.TableName = "test"
+	manyTypesCase.SingleTableTask.TableName = "test"
 	return manyTypesCase
 }
 

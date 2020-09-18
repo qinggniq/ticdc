@@ -23,7 +23,7 @@ import (
 )
 
 func TestCanalKafkaDockerEnv_Basic(t *testing.T) {
-	env := NewCanalKafkaDockerEnv("")
+	env := NewKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
@@ -52,9 +52,9 @@ func (t *dummyTask) Prepare(taskContext *framework.TaskContext) error {
 
 func (t *dummyTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
-		PDUri:   "http://upstream-pd:2379",
-		SinkURI: "kafka://kafka:9092/testdb_test?protocol=canal",
-		Opts:    map[string]string{"force-handle-key-pkey": "true"},
+		PDUri:      "http://upstream-pd:2379",
+		SinkURI:    "kafka://kafka:9092/testdb_test?protocol=canal",
+		Opts:       map[string]string{"force-handle-key-pkey": "true"},
 		ConfigFile: "/config/canal-test-config.toml",
 	}
 }
@@ -78,7 +78,7 @@ func (t *dummyTask) Run(taskContext *framework.TaskContext) error {
 }
 
 func TestCanalKafkaDockerEnv_RunTest(t *testing.T) {
-	env := NewCanalKafkaDockerEnv("")
+	env := NewKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()

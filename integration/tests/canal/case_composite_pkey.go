@@ -21,12 +21,13 @@ import (
 
 //nolint:unused
 type compositePKeyCase struct {
-	canal.CanalSingleTableTask
+	canal.SingleTableTask
 }
 
+// NewCompositePKeyCase create a test case which have composite primary key
 func NewCompositePKeyCase() *compositePKeyCase {
 	compositePKeyCase := new(compositePKeyCase)
-	compositePKeyCase.CanalSingleTableTask.TableName = "test"
+	compositePKeyCase.SingleTableTask.TableName = "test"
 	return compositePKeyCase
 }
 

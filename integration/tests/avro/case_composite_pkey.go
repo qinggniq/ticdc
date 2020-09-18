@@ -21,12 +21,13 @@ import (
 
 //nolint:unused
 type compositePKeyCase struct {
-	avro.AvroSingleTableTask
+	avro.SingleTableTask
 }
 
+// NewCompositePKeyCase create a test case which have composite primary key
 func NewCompositePKeyCase() *compositePKeyCase {
 	compositePKeyCase := new(compositePKeyCase)
-	compositePKeyCase.AvroSingleTableTask.TableName = "test"
+	compositePKeyCase.SingleTableTask.TableName = "test"
 	return compositePKeyCase
 }
 

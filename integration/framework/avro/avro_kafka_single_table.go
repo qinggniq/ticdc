@@ -27,19 +27,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// AvroSingleTableTask provides a basic implementation for an Avro test case
-type AvroSingleTableTask struct {
+// SingleTableTask provides a basic implementation for an Avro test case
+type SingleTableTask struct {
 	TableName string
 }
 
 // Name implements Task
-func (a *AvroSingleTableTask) Name() string {
-	log.Warn("AvroSingleTableTask should be embedded in another Task")
-	return "AvroSingleTableTask-" + a.TableName
+func (a *SingleTableTask) Name() string {
+	log.Warn("SingleTableTask should be embedded in another Task")
+	return "SingleTableTask-" + a.TableName
 }
 
 // GetCDCProfile implements Task
-func (a *AvroSingleTableTask) GetCDCProfile() *framework.CDCProfile {
+func (a *SingleTableTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
 		PDUri:   "http://upstream-pd:2379",
 		SinkURI: "kafka://kafka:9092/testdb_" + a.TableName + "?protocol=avro",
@@ -48,7 +48,7 @@ func (a *AvroSingleTableTask) GetCDCProfile() *framework.CDCProfile {
 }
 
 // Prepare implements Task
-func (a *AvroSingleTableTask) Prepare(taskContext *framework.TaskContext) error {
+func (a *SingleTableTask) Prepare(taskContext *framework.TaskContext) error {
 	err := taskContext.CreateDB("testdb")
 	if err != nil {
 		return err
@@ -121,7 +121,7 @@ func (a *AvroSingleTableTask) Prepare(taskContext *framework.TaskContext) error 
 }
 
 // Run implements Task
-func (a *AvroSingleTableTask) Run(taskContext *framework.TaskContext) error {
-	log.Warn("AvroSingleTableTask has been run")
+func (a *SingleTableTask) Run(taskContext *framework.TaskContext) error {
+	log.Warn("SingleTableTask has been run")
 	return nil
 }

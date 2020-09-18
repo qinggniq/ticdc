@@ -23,12 +23,13 @@ import (
 
 //nolint:unused
 type manyTypesCase struct {
-	avro.AvroSingleTableTask
+	avro.SingleTableTask
 }
 
+// NewManyTypesCase create a test case which has many types
 func NewManyTypesCase() *manyTypesCase {
 	manyTypesCase := new(manyTypesCase)
-	manyTypesCase.AvroSingleTableTask.TableName = "test"
+	manyTypesCase.SingleTableTask.TableName = "test"
 	return manyTypesCase
 }
 

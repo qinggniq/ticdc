@@ -35,7 +35,7 @@ func main() {
 	}
 
 	log.SetLevel(zapcore.DebugLevel)
-	env := canal.NewCanalKafkaDockerEnv(*dockerComposeFile)
+	env := canal.NewKafkaDockerEnv(*dockerComposeFile)
 	env.Setup()
 
 	for i := range testCases {

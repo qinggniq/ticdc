@@ -29,19 +29,19 @@ const (
 	testDbName = "testdb"
 )
 
-// CanalSingleTableTask provides a basic implementation for an Avro test case
-type CanalSingleTableTask struct {
+// SingleTableTask provides a basic implementation for an Avro test case
+type SingleTableTask struct {
 	TableName string
 }
 
 // Name implements Task
-func (c *CanalSingleTableTask) Name() string {
-	log.Warn("CanalSingleTableTask should be embedded in another Task")
-	return "CanalSingleTableTask-" + c.TableName
+func (c *SingleTableTask) Name() string {
+	log.Warn("SingleTableTask should be embedded in another Task")
+	return "SingleTableTask-" + c.TableName
 }
 
 // GetCDCProfile implements Task
-func (c *CanalSingleTableTask) GetCDCProfile() *framework.CDCProfile {
+func (c *SingleTableTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
 		PDUri:      "http://upstream-pd:2379",
 		SinkURI:    "kafka://kafka:9092/testdb?protocol=canal",
@@ -51,7 +51,7 @@ func (c *CanalSingleTableTask) GetCDCProfile() *framework.CDCProfile {
 }
 
 // Prepare implements Task
-func (c *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error {
+func (c *SingleTableTask) Prepare(taskContext *framework.TaskContext) error {
 	err := taskContext.CreateDB(testDbName)
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func (c *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error
 	}
 	taskContext.Downstream.SetConnMaxLifetime(5 * time.Second)
 
-	if err = c.checkCanalAdapterState(); err != nil{
+	if err = c.checkCanalAdapterState(); err != nil {
 		return err
 	}
 	if taskContext.WaitForReady != nil {
@@ -80,7 +80,7 @@ func (c *CanalSingleTableTask) Prepare(taskContext *framework.TaskContext) error
 	return nil
 }
 
-func (c *CanalSingleTableTask) checkCanalAdapterState() error {
+func (c *SingleTableTask) checkCanalAdapterState() error {
 	resp, err := http.Get(
 		"http://127.0.0.1:8081/destinations")
 	if err != nil {
@@ -107,7 +107,7 @@ func (c *CanalSingleTableTask) checkCanalAdapterState() error {
 }
 
 // Run implements Task
-func (c *CanalSingleTableTask) Run(taskContext *framework.TaskContext) error {
-	log.Warn("CanalSingleTableTask has been run")
+func (c *SingleTableTask) Run(taskContext *framework.TaskContext) error {
+	log.Warn("SingleTableTask has been run")
 	return nil
 }

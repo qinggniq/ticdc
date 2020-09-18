@@ -20,12 +20,13 @@ import (
 
 //nolint:unused
 type unsignedCase struct {
-	avro.AvroSingleTableTask
+	avro.SingleTableTask
 }
 
+// NewUnsignedCase create a test case to check the correction of unsigned integer
 func NewUnsignedCase() *unsignedCase {
 	unsignedCase := new(unsignedCase)
-	unsignedCase.AvroSingleTableTask.TableName = "test"
+	unsignedCase.SingleTableTask.TableName = "test"
 	return unsignedCase
 }
 

@@ -21,15 +21,15 @@ import (
 )
 
 type emptyAvroSingleTableTask struct {
-	AvroSingleTableTask
+	SingleTableTask
 }
 
 func TestAvroSingleTableTest_Prepare(t *testing.T) {
-	env := NewAvroKafkaDockerEnv("")
+	env := NewKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
-	env.RunTest(&emptyAvroSingleTableTask{AvroSingleTableTask{TableName: "test"}})
+	env.RunTest(&emptyAvroSingleTableTask{SingleTableTask{TableName: "test"}})
 
 	_, err := sql.Open("mysql", upstreamDSN+"testdb")
 	require.NoError(t, err)

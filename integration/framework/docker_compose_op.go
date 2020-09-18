@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// DockerComposeOperator represent a docker compose
 type DockerComposeOperator struct {
 	FileName      string
 	Controller    string

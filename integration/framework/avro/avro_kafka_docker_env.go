@@ -39,13 +39,13 @@ const (
 	downstreamDSN           = "root@tcp(127.0.0.1:5000)/"
 )
 
-// AvroKafkaDockerEnv represents the docker-compose service defined in docker-compose-avro.yml
-type AvroKafkaDockerEnv struct {
+// KafkaDockerEnv represents the docker-compose service defined in docker-compose-avro.yml
+type KafkaDockerEnv struct {
 	framework.DockerComposeOperator
 }
 
-// NewAvroKafkaDockerEnv creates a new AvroKafkaDockerEnv
-func NewAvroKafkaDockerEnv(dockerComposeFile string) *AvroKafkaDockerEnv {
+// NewKafkaDockerEnv creates a new KafkaDockerEnv
+func NewKafkaDockerEnv(dockerComposeFile string) *KafkaDockerEnv {
 	healthChecker := func() error {
 		resp, err := http.Get(healthCheckURI)
 		if err != nil {
@@ -91,7 +91,7 @@ func NewAvroKafkaDockerEnv(dockerComposeFile string) *AvroKafkaDockerEnv {
 		file = dockerComposeFile
 	}
 
-	return &AvroKafkaDockerEnv{framework.DockerComposeOperator{
+	return &KafkaDockerEnv{framework.DockerComposeOperator{
 		FileName:      file,
 		Controller:    controllerContainerName,
 		HealthChecker: healthChecker,
@@ -99,13 +99,13 @@ func NewAvroKafkaDockerEnv(dockerComposeFile string) *AvroKafkaDockerEnv {
 }
 
 // Reset implements Environment
-func (e *AvroKafkaDockerEnv) Reset() {
+func (e *KafkaDockerEnv) Reset() {
 	e.TearDown()
 	e.Setup()
 }
 
 // RunTest implements Environment
-func (e *AvroKafkaDockerEnv) RunTest(task framework.Task) {
+func (e *KafkaDockerEnv) RunTest(task framework.Task) {
 	cmdLine := "/cdc " + task.GetCDCProfile().String()
 	bytes, err := e.ExecInController(cmdLine)
 	if err != nil {
@@ -158,6 +158,6 @@ func (e *AvroKafkaDockerEnv) RunTest(task framework.Task) {
 }
 
 // SetListener implements Environment. Currently unfinished, will be used to monitor Kafka output
-func (e *AvroKafkaDockerEnv) SetListener(states interface{}, listener framework.MqListener) {
+func (e *KafkaDockerEnv) SetListener(states interface{}, listener framework.MqListener) {
 	// TODO
 }

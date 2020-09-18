@@ -24,12 +24,13 @@ import (
 
 //nolint:unused
 type alterCase struct {
-	canal.CanalSingleTableTask
+	canal.SingleTableTask
 }
 
+// NewAlterCase create a test case which contains alter ddls
 func NewAlterCase() *alterCase {
 	alterCase := new(alterCase)
-	alterCase.CanalSingleTableTask.TableName = "test"
+	alterCase.SingleTableTask.TableName = "test"
 	return alterCase
 }
 

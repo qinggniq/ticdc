@@ -24,12 +24,13 @@ import (
 
 //nolint:unused
 type deleteCase struct {
-	canal.CanalSingleTableTask
+	canal.SingleTableTask
 }
 
+// NewDeleteCase create a test case which contains delete ddls
 func NewDeleteCase() *deleteCase {
 	deleteCase := new(deleteCase)
-	deleteCase.CanalSingleTableTask.TableName = "test"
+	deleteCase.SingleTableTask.TableName = "test"
 	return deleteCase
 }
 

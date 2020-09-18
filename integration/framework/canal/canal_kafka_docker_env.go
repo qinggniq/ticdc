@@ -32,13 +32,13 @@ const (
 	downstreamDSN           = "root@tcp(127.0.0.1:5000)/"
 )
 
-// CanalKafkaDockerEnv represents the docker-compose service defined in docker-compose-canal.yml
-type CanalKafkaDockerEnv struct {
+// KafkaDockerEnv represents the docker-compose service defined in docker-compose-canal.yml
+type KafkaDockerEnv struct {
 	framework.DockerComposeOperator
 }
 
-// NewCanalKafkaDockerEnv creates a new CanalKafkaDockerEnv
-func NewCanalKafkaDockerEnv(dockerComposeFile string) *CanalKafkaDockerEnv {
+// NewKafkaDockerEnv creates a new KafkaDockerEnv
+func NewKafkaDockerEnv(dockerComposeFile string) *KafkaDockerEnv {
 	var file string
 	if dockerComposeFile == "" {
 		st, err := find.Repo()
@@ -50,22 +50,22 @@ func NewCanalKafkaDockerEnv(dockerComposeFile string) *CanalKafkaDockerEnv {
 		file = dockerComposeFile
 	}
 
-	return &CanalKafkaDockerEnv{framework.DockerComposeOperator{
-		FileName:      file,
-		Controller:    controllerContainerName,
+	return &KafkaDockerEnv{framework.DockerComposeOperator{
+		FileName:   file,
+		Controller: controllerContainerName,
 		// canal's health checker should be navigated
 		HealthChecker: nil,
 	}}
 }
 
 // Reset implements Environment
-func (e *CanalKafkaDockerEnv) Reset() {
+func (e *KafkaDockerEnv) Reset() {
 	e.TearDown()
 	e.Setup()
 }
 
 // RunTest implements Environment
-func (e *CanalKafkaDockerEnv) RunTest(task framework.Task) {
+func (e *KafkaDockerEnv) RunTest(task framework.Task) {
 	cmdLine := "/cdc " + task.GetCDCProfile().String()
 	bytes, err := e.ExecInController(cmdLine)
 	if err != nil {
@@ -118,6 +118,6 @@ func (e *CanalKafkaDockerEnv) RunTest(task framework.Task) {
 }
 
 // SetListener implements Environment. Currently unfinished, will be used to monitor Kafka output
-func (e *CanalKafkaDockerEnv) SetListener(states interface{}, listener framework.MqListener) {
+func (e *KafkaDockerEnv) SetListener(states interface{}, listener framework.MqListener) {
 	// TODO
 }
