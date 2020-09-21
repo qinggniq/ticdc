@@ -44,8 +44,8 @@ func (c *SingleTableTask) Name() string {
 func (c *SingleTableTask) GetCDCProfile() *framework.CDCProfile {
 	return &framework.CDCProfile{
 		PDUri:      "http://upstream-pd:2379",
-		SinkURI:    "kafka://kafka:9092/testdb?protocol=canal",
-		Opts:       map[string]string{"force-handle-key-pkey": "true"},
+		SinkURI:    "kafka://kafka:9092/" + testDbName + "?protocol=canal",
+		Opts:       map[string]string{"force-handle-key-pkey": "true", "support-txn": "true"},
 		ConfigFile: "/config/canal-test-config.toml",
 	}
 }
@@ -82,7 +82,7 @@ func (c *SingleTableTask) Prepare(taskContext *framework.TaskContext) error {
 
 func (c *SingleTableTask) checkCanalAdapterState() error {
 	resp, err := http.Get(
-		"http://127.0.0.1:8081/destinations")
+		"http://127.0.0.1:8081/syncSwitch/" + testDbName)
 	if err != nil {
 		return err
 	}
