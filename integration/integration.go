@@ -18,6 +18,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/integration/framework"
 	"github.com/pingcap/ticdc/integration/framework/canal"
+	"github.com/pingcap/ticdc/integration/tests/avro"
 	canal2 "github.com/pingcap/ticdc/integration/tests/canal"
 	"go.uber.org/zap/zapcore"
 )
@@ -26,6 +27,12 @@ func main() {
 	dockerComposeFile := flag.String("docker-compose-file", "", "the path of the Docker-compose yml file")
 
 	testCases := []framework.Task{
+		avro.NewSimpleCase(),
+		avro.NewDeleteCase(),
+		avro.NewManyTypesCase(),
+		avro.NewUnsignedCase(),
+		avro.NewCompositePKeyCase(),
+		avro.NewAlterCase(), // this case is slow, so put it last
 		canal2.NewSimpleCase(),
 		canal2.NewDeleteCase(),
 		canal2.NewManyTypesCase(),
