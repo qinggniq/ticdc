@@ -37,7 +37,7 @@ func TestAvroSingleTableTest_Prepare(t *testing.T) {
 	_, err = sql.Open("mysql", downstreamDSN+"testdb")
 	require.NoError(t, err)
 
-	err = env.healthChecker()
+	err = env.HealthChecker()
 	require.NoError(t, err)
 
 	env.TearDown()
