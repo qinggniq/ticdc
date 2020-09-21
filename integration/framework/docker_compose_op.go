@@ -31,7 +31,7 @@ type DockerComposeOperator struct {
 
 // Setup brings up a docker-compose service
 func (d *DockerComposeOperator) Setup() {
-	cmd := exec.Command("docker-compose", "-f", d.FileName, "up", "--d")
+	cmd := exec.Command("docker-compose", "-f", d.FileName, "up", "-d")
 	runCmdHandleError(cmd)
 
 	if d.HealthChecker != nil {
