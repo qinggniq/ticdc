@@ -14,16 +14,21 @@
 package common
 
 import (
-	"github.com/pingcap/log"
-	"go.uber.org/zap"
 	"sort"
+	"sync"
+	"sync/atomic"
 
+	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/cdc/model"
+	"github.com/pingcap/ticdc/pkg/filter"
+	"go.uber.org/zap"
 )
 
-// UnresolvedTxnCache caches unresolved txns, not thread safe
+// UnresolvedTxnCache caches unresolved txns
 type UnresolvedTxnCache struct {
-	unresolvedTxns map[model.TableID][]*model.SingleTableTxn
+	unresolvedTxnsMu sync.Mutex
+	unresolvedTxns   map[model.TableID][]*model.SingleTableTxn
+	checkpointTs     uint64
 }
 
 // NewUnresolvedTxnCache returns a new UnresolvedTxnCache
@@ -34,34 +39,51 @@ func NewUnresolvedTxnCache() *UnresolvedTxnCache {
 }
 
 // Append adds unresolved rows to cache
-func (c *UnresolvedTxnCache) Append(row *model.RowChangedEvent) {
-	key := row.Table.TableID
-	txns := c.unresolvedTxns[key]
-	if len(txns) == 0 || txns[len(txns)-1].StartTs != row.StartTs {
-		// fail-fast check
-		if len(txns) != 0 && txns[len(txns)-1].CommitTs > row.CommitTs {
-			log.Fatal("the commitTs of the emit row is less than the received row",
-				zap.Stringer("table", row.Table),
-				zap.Uint64("emit row startTs", row.StartTs),
-				zap.Uint64("emit row commitTs", row.CommitTs),
-				zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
-				zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
+func (c *UnresolvedTxnCache) Append(filter *filter.Filter, rows ...*model.RowChangedEvent) int {
+	c.unresolvedTxnsMu.Lock()
+	defer c.unresolvedTxnsMu.Unlock()
+	appendRows := 0
+	for _, row := range rows {
+		if filter != nil && filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table) {
+			log.Info("Row changed event ignored", zap.Uint64("start-ts", row.StartTs))
+			continue
 		}
-		txns = append(txns, &model.SingleTableTxn{
-			StartTs:  row.StartTs,
-			CommitTs: row.CommitTs,
-			Table:    row.Table,
-		})
-		c.unresolvedTxns[key] = txns
+		txns := c.unresolvedTxns[row.Table.TableID]
+		if len(txns) == 0 || txns[len(txns)-1].StartTs != row.StartTs {
+			// fail-fast check
+			if len(txns) != 0 && txns[len(txns)-1].CommitTs > row.CommitTs {
+				log.Fatal("the commitTs of the emit row is less than the received row",
+					zap.Stringer("table", row.Table),
+					zap.Uint64("emit row startTs", row.StartTs),
+					zap.Uint64("emit row commitTs", row.CommitTs),
+					zap.Uint64("last received row startTs", txns[len(txns)-1].StartTs),
+					zap.Uint64("last received row commitTs", txns[len(txns)-1].CommitTs))
+			}
+			txns = append(txns, &model.SingleTableTxn{
+				StartTs:  row.StartTs,
+				CommitTs: row.CommitTs,
+				Table:    row.Table,
+			})
+			c.unresolvedTxns[row.Table.TableID] = txns
+		}
+		txns[len(txns)-1].Append(row)
+		appendRows++
 	}
-	txns[len(txns)-1].Append(row)
+	return appendRows
 }
 
 // Resolved returns resolved txns according to resolvedTs
 func (c *UnresolvedTxnCache) Resolved(resolvedTs uint64) map[model.TableID][]*model.SingleTableTxn {
+	if resolvedTs <= atomic.LoadUint64(&c.checkpointTs) {
+		return nil
+	}
+
+	c.unresolvedTxnsMu.Lock()
+	defer c.unresolvedTxnsMu.Unlock()
 	if len(c.unresolvedTxns) == 0 {
 		return nil
 	}
+
 	_, resolvedTxnsMap := splitResolvedTxn(resolvedTs, c.unresolvedTxns)
 	return resolvedTxnsMap
 }
@@ -69,6 +91,11 @@ func (c *UnresolvedTxnCache) Resolved(resolvedTs uint64) map[model.TableID][]*mo
 // Unresolved returns unresolved txns
 func (c *UnresolvedTxnCache) Unresolved() map[model.TableID][]*model.SingleTableTxn {
 	return c.unresolvedTxns
+}
+
+// UpdateCheckpoint updates the checkpoint ts
+func (c *UnresolvedTxnCache) UpdateCheckpoint(checkpointTs uint64) {
+	atomic.StoreUint64(&c.checkpointTs, checkpointTs)
 }
 
 func splitResolvedTxn(
