@@ -85,7 +85,7 @@ func (s *manyTypesCase) Run(ctx *framework.TaskContext) error {
 		"t_datetime":  time.Now(),
 		"t_timestamp": time.Now(),
 		"t_time":      "23:59:59",
-		"t_char":      'a',
+		"t_char":      "a",
 		"t_varchar":   "测试varchar",
 		"t_blob":      []byte{0x1, 0x2, 0x0, 0x3, 0x4},
 		"t_text":      "测试text",
