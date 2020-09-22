@@ -16,13 +16,13 @@ package canal
 import (
 	"context"
 	"database/sql"
-	"github.com/pingcap/ticdc/integration/framework"
-	"os/exec"
-	"time"
-
+	"errors"
 	"github.com/integralist/go-findroot/find"
 	"github.com/pingcap/log"
+	"github.com/pingcap/ticdc/integration/framework"
 	"go.uber.org/zap"
+	"os/exec"
+	"time"
 )
 
 const (
@@ -39,6 +39,27 @@ type KafkaDockerEnv struct {
 
 // NewKafkaDockerEnv creates a new KafkaDockerEnv
 func NewKafkaDockerEnv(dockerComposeFile string) *KafkaDockerEnv {
+	checkDbConn := func(dns string) error {
+		db, err := sql.Open("mysql", dns)
+		if err != nil {
+			return err
+		}
+		if db == nil {
+			return errors.New("Can not connect to " + dns)
+		}
+		defer db.Close()
+		err = db.Ping()
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	healthChecker := func() error {
+		if err := checkDbConn(upstreamDSN); err != nil {
+			return err
+		}
+		return checkDbConn(upstreamDSN)
+	}
 	var file string
 	if dockerComposeFile == "" {
 		st, err := find.Repo()
@@ -54,7 +75,7 @@ func NewKafkaDockerEnv(dockerComposeFile string) *KafkaDockerEnv {
 		FileName:   file,
 		Controller: controllerContainerName,
 		// canal's health checker should be navigated
-		HealthChecker: nil,
+		HealthChecker: healthChecker,
 	}}
 }
 
