@@ -140,6 +140,8 @@ func (b *canalEntryBuilder) buildHeader(commitTs uint64, schema string, table st
 func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated bool) (*canal.Column, error) {
 	sqlType := MysqlToJavaType(c.Type)
 	mysqlType := parser_types.TypeStr(c.Type)
+	log.Info("qinggniq before", zap.String("column", c.Name), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", fmt.Sprintf("%v", c.Value))
+
 	if c.Flag.IsBinary() {
 		if parser_types.IsTypeBlob(c.Type) {
 			mysqlType = strings.Replace(mysqlType, "text", "blob", 1)
@@ -207,7 +209,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			value = fmt.Sprintf("%v", v)
 		}
 	}
-	log.Info("qinggniq", zap.String("column", c.Name), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType))
+	log.Info("qinggniq after", zap.String("column", c.Name), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", value))
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,
