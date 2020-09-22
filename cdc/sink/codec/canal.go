@@ -207,7 +207,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			value = fmt.Sprintf("%v", v)
 		}
 	}
-
+	log.Info("qinggniq", zap.String("column", c.Name), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType))
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,
