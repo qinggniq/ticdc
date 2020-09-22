@@ -122,6 +122,7 @@ func (s *canalBatchSuite) TestCanalEventBatchEncoderWithTxn(c *check.C) {
 		for _, message := range res {
 			c.Assert(message.Key, check.IsNil)
 		}
+
 		for j := range res {
 			packet := &canal.Packet{}
 			err := proto.Unmarshal(res[j].Value, packet)
@@ -198,6 +199,7 @@ func (s *canalBatchSuite) TestCanalEventBatchEncoderWithoutTxn(c *check.C) {
 		}
 	}
 }
+
 
 type canalEntrySuite struct{}
 
