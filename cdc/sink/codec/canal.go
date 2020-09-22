@@ -372,7 +372,11 @@ func (d *CanalEventBatchEncoderWithTxn) Build() []*MQMessage {
 					log.Fatal("Error when append row change event", zap.Error(err))
 				}
 			}
-			messages = append(messages, canalMessageEncoder.build(txn.CommitTs))
+			message := canalMessageEncoder.build(txn.CommitTs)
+			if message == nil {
+				continue
+			}
+			messages = append(messages, message)
 		}
 	}
 	sort.Slice(messages, func(i, j int) bool { return messages[i].Ts < messages[j].Ts })
@@ -438,7 +442,11 @@ func (d *CanalEventBatchEncoderWithoutTxn) EncodeDDLEvent(e *model.DDLEvent) (*M
 
 // Build implements the EventBatchEncoder interface
 func (d *CanalEventBatchEncoderWithoutTxn) Build() []*MQMessage {
-	return []*MQMessage{d.encoder.build(0)}
+	ret := d.encoder.build(0)
+	if ret == nil {
+		return nil
+	}
+	return []*MQMessage{ret}
 }
 
 // MixedBuild implements the EventBatchEncoder interface
@@ -528,6 +536,9 @@ func (d *canalMessageEncoder) encodeDDLEvent(e *model.DDLEvent) (*MQMessage, err
 }
 
 func (d *canalMessageEncoder) build(commitTs uint64) *MQMessage {
+	if len(d.packet.Body) == 0 {
+		return nil
+	}
 	err := d.refreshPacketBody()
 	if err != nil {
 		log.Fatal("Error when generating Canal packet", zap.Error(err))
