@@ -3,7 +3,7 @@ RUN apk add --no-cache git make bash
 WORKDIR /go/src/github.com/pingcap/ticdc
 COPY . .
 ENV CDC_ENABLE_VENDOR=0
-ENV GOPROXY="https://goproxy.io,direct
+ENV GOPROXY=https://goproxy.io,direct
 RUN make
 
 FROM alpine:3.12
