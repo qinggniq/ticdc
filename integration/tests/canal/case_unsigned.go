@@ -15,12 +15,12 @@ package canal
 
 import (
 	"github.com/pingcap/ticdc/integration/framework"
-	"github.com/pingcap/ticdc/integration/framework/avro"
+	"github.com/pingcap/ticdc/integration/framework/canal"
 )
 
 //nolint:unused
 type unsignedCase struct {
-	avro.SingleTableTask
+	canal.SingleTableTask
 }
 
 // NewUnsignedCase create a test case to check the correction of unsigned integer
@@ -39,7 +39,6 @@ func (s *unsignedCase) Run(ctx *framework.TaskContext) error {
 		id          INT,
 		t_int       INT UNSIGNED,
 		t_bigint    BIGINT UNSIGNED,
-		t_bit       BIT(64),
 		PRIMARY KEY (id)
 	)
     `
@@ -64,7 +63,6 @@ func (s *unsignedCase) Run(ctx *framework.TaskContext) error {
 		"id":       0,
 		"t_int":    0xFEEDBEEF,
 		"t_bigint": uint64(0xFEEDBEEFFEEDBEEF),
-		"t_bit":    uint64(0xFFFFFFFFFFFFFFFA),
 	}).Send().Wait().Check()
 
 }
