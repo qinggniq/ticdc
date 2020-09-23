@@ -50,6 +50,9 @@ func convertRowEventType(e *model.RowChangedEvent) canal.EventType {
 	if e.IsDelete() {
 		return canal.EventType_DELETE
 	}
+	if len(e.PreColumns) == 0 {
+		return canal.EventType_INSERT
+	}
 	return canal.EventType_UPDATE
 }
 
@@ -132,6 +135,7 @@ func (b *canalEntryBuilder) buildHeader(commitTs uint64, schema string, table st
 func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated bool) (*canal.Column, error) {
 	sqlType := MysqlToJavaType(c.Type)
 	mysqlType := parser_types.TypeStr(c.Type)
+	log.Print("qinggniq before ", zap.String("name", colName), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", fmt.Sprintf("%v", c.Value)))
 	if c.Flag.IsBinary() {
 		if parser_types.IsTypeBlob(c.Type) {
 			mysqlType = strings.Replace(mysqlType, "text", "blob", 1)
@@ -185,7 +189,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			// special handle for text and blob
 			// see https://github.com/alibaba/canal/blob/9f6021cf36f78cc8ac853dcf37a1769f359b868b/parse/src/main/java/com/alibaba/otter/canal/parse/inbound/mysql/dbsync/LogEventConvert.java#L801
 			switch sqlType {
-			case JavaSQLTypeVARCHAR:
+			case JavaSQLTypeVARCHAR, JavaSQLTypeCHAR:
 				value = string(v)
 			default:
 				decoded, err := b.bytesDecoder.Bytes(v)
@@ -199,7 +203,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			value = fmt.Sprintf("%v", v)
 		}
 	}
-
+	log.Print("qinggniq after ", zap.String("name", colName), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", fmt.Sprintf("%v", c.Value)))
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,

@@ -37,8 +37,8 @@ func (s *unsignedCase) Name() string {
 func (s *unsignedCase) Run(ctx *framework.TaskContext) error {
 	createDBQuery := `create table test (
 		id          INT,
-		t_int       INT UNSIGNED,
-		t_bigint    BIGINT UNSIGNED,
+		t_int       INT ,
+		t_bigint    BIGINT ,
 		PRIMARY KEY (id)
 	)
     `

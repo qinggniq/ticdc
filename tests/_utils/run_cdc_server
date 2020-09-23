@@ -96,7 +96,7 @@ if [[ "$restart" == "true" ]]; then
         $tls \
         $certcn \
         $addr \
-        $pd_addr &>> $workdir/stdout$logsuffix.log
+        $pd_addr >> $workdir/stdout$log_suffix.log 2>&1
       if [ $? -eq 143 ]; then
         break
       fi
@@ -109,7 +109,8 @@ else
     $tls \
     $certcn \
     $addr \
-    $pd_addr &>> $workdir/stdout$log_suffix.log &
+    $pd_addr >> $workdir/stdout$log_suffix.log 2>&1 &
+    #$pd_addr &>> $workdir/stdout$log_suffix.log &
 fi
 
 cd $pwd
