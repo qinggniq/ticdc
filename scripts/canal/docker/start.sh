@@ -26,19 +26,24 @@ spring:
     default-property-inclusion: non_null
 
 canal.conf:
-  mode: kafka #rocketMQ
-  zookeeperHosts: ${ZOOKEEPER_SERVER}
-  mqServers: ${KAFKA_SERVER} #or rocketmq
+  mode: kafka # tcp rocketMQ rabbitMQ
   flatMessage: false
-  batchSize: 500
+  zookeeperHosts:
   syncBatchSize: 1000
   retries: 0
   timeout:
   accessKey:
   secretKey:
-  username:
-  password:
-  vhost:
+  consumerProperties:
+    # kafka consumer
+    kafka.bootstrap.servers: ${KAFKA_SERVER}
+    kafka.enable.auto.commit: false
+    kafka.auto.commit.interval.ms: 1000
+    kafka.auto.offset.reset: latest
+    kafka.request.timeout.ms: 40000
+    kafka.session.timeout.ms: 30000
+    kafka.isolation.level: read_committed
+    kafka.max.poll.records: 1000
   canalAdapters:
   - instance: ${DB_NAME} # canal instance Name or mq topic name
     groups:
