@@ -20,16 +20,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type emptyAvroSingleTableTask struct {
+type emptyCanalSingleTableTask struct {
 	SingleTableTask
 }
 
-func TestAvroSingleTableTest_Prepare(t *testing.T) {
+func TestCanalSingleTableTest_Prepare(t *testing.T) {
 	env := NewKafkaDockerEnv("")
 	require.NotNil(t, env)
 
 	env.Setup()
-	env.RunTest(&emptyAvroSingleTableTask{SingleTableTask{TableName: "test"}})
+	env.RunTest(&emptyCanalSingleTableTask{SingleTableTask{TableName: "test"}})
 
 	_, err := sql.Open("mysql", upstreamDSN+"testdb")
 	require.NoError(t, err)

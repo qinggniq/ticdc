@@ -31,7 +31,7 @@ func NewUnsignedCase() *unsignedCase {
 }
 
 func (s *unsignedCase) Name() string {
-	return "Many Types"
+	return "Unsigned"
 }
 
 func (s *unsignedCase) Run(ctx *framework.TaskContext) error {
