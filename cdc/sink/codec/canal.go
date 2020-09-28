@@ -15,17 +15,20 @@ package codec
 
 import (
 	"fmt"
-	"go.uber.org/zap"
-	"log"
+	"sort"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
 	mm "github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
 	parser_types "github.com/pingcap/parser/types"
 	"github.com/pingcap/ticdc/cdc/model"
+	"github.com/pingcap/ticdc/cdc/sink/common"
 	cerror "github.com/pingcap/ticdc/pkg/errors"
 	canal "github.com/pingcap/ticdc/proto/canal"
 	"golang.org/x/text/encoding"
@@ -99,13 +102,15 @@ func isCanalDdl(t canal.EventType) bool {
 		canal.EventType_DINDEX,
 		canal.EventType_ALTER,
 		canal.EventType_ERASE,
-		canal.EventType_TRUNCATE:
+		canal.EventType_TRUNCATE,
+		canal.EventType_QUERY:
 		return true
 	}
 	return false
 }
 
 type canalEntryBuilder struct {
+	forceHkPk    bool
 	bytesDecoder *encoding.Decoder // default charset is ISO-8859-1
 }
 
@@ -135,7 +140,6 @@ func (b *canalEntryBuilder) buildHeader(commitTs uint64, schema string, table st
 func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated bool) (*canal.Column, error) {
 	sqlType := MysqlToJavaType(c.Type)
 	mysqlType := parser_types.TypeStr(c.Type)
-	log.Print("qinggniq before ", zap.String("name", colName), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", fmt.Sprintf("%v", c.Value)))
 	if c.Flag.IsBinary() {
 		if parser_types.IsTypeBlob(c.Type) {
 			mysqlType = strings.Replace(mysqlType, "text", "blob", 1)
@@ -169,8 +173,8 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			sqlType = JavaSQLTypeVARCHAR
 		}
 	}
-
-	isKey := c.Flag.IsPrimaryKey()
+	// alibaba canal server does not support the delete operation of table which does not have primary key, we can use handle key to hack it.
+	isKey := c.Flag.IsPrimaryKey() || (b.forceHkPk && c.Flag.IsHandleKey())
 	isNull := c.Value == nil
 	value := ""
 	if !isNull {
@@ -203,7 +207,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 			value = fmt.Sprintf("%v", v)
 		}
 	}
-	log.Print("qinggniq after ", zap.String("name", colName), zap.Int32("sqlType", int32(sqlType)), zap.String("mysqlType", mysqlType), zap.String("value", fmt.Sprintf("%v", c.Value)))
+
 	canalColumn := &canal.Column{
 		SqlType:       int32(sqlType),
 		Name:          colName,
@@ -220,7 +224,7 @@ func (b *canalEntryBuilder) buildColumn(c *model.Column, colName string, updated
 func (b *canalEntryBuilder) buildRowData(e *model.RowChangedEvent) (*canal.RowData, error) {
 	var columns []*canal.Column
 	for _, column := range e.Columns {
-		if e == nil {
+		if column == nil {
 			continue
 		}
 		c, err := b.buildColumn(column, column.Name, !e.IsDelete())
@@ -231,7 +235,7 @@ func (b *canalEntryBuilder) buildRowData(e *model.RowChangedEvent) (*canal.RowDa
 	}
 	var preColumns []*canal.Column
 	for _, column := range e.PreColumns {
-		if e == nil {
+		if column == nil {
 			continue
 		}
 		c, err := b.buildColumn(column, column.Name, !e.IsDelete())
@@ -306,45 +310,200 @@ func NewCanalEntryBuilder() *canalEntryBuilder {
 	d := charmap.ISO8859_1.NewDecoder()
 	return &canalEntryBuilder{
 		bytesDecoder: d,
+		forceHkPk:    false,
 	}
 }
 
-// CanalEventBatchEncoder encodes the events into the byte of a batch into.
-type CanalEventBatchEncoder struct {
-	messages     *canal.Messages
-	packet       *canal.Packet
-	entryBuilder *canalEntryBuilder
+// CanalEventBatchEncoderWithTxn encodes the events into the byte by transaction.
+type CanalEventBatchEncoderWithTxn struct {
+	forceHkPk  bool
+	resolvedTs uint64
+	txnCache   *common.UnresolvedTxnCache
 }
 
-// AppendResolvedEvent appends a resolved event to the encoder
-// TODO TXN support
-func (d *CanalEventBatchEncoder) AppendResolvedEvent(ts uint64) (EncoderResult, error) {
-	return EncoderNoOperation, nil
+// SetForceHandleKeyPKey set forceHandleKeyPKey, then handle key will be regarded as primary key
+func (d *CanalEventBatchEncoderWithTxn) SetForceHandleKeyPKey(forceHkPk bool) {
+	d.forceHkPk = forceHkPk
 }
 
 // EncodeCheckpointEvent implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) EncodeCheckpointEvent(ts uint64) (*MQMessage, error) {
+func (d *CanalEventBatchEncoderWithTxn) EncodeCheckpointEvent(ts uint64) (*MQMessage, error) {
 	// For canal now, there is no such a corresponding type to ResolvedEvent so far.
 	// Therefore the event is ignored.
 	return nil, nil
 }
 
 // AppendRowChangedEvent implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) AppendRowChangedEvent(e *model.RowChangedEvent) (EncoderResult, error) {
-	entry, err := d.entryBuilder.FromRowEvent(e)
-	if err != nil {
-		return EncoderNoOperation, errors.Trace(err)
-	}
-	b, err := proto.Marshal(entry)
-	if err != nil {
-		return EncoderNoOperation, cerror.WrapError(cerror.ErrCanalEncodeFailed, err)
-	}
-	d.messages.Messages = append(d.messages.Messages, b)
+func (d *CanalEventBatchEncoderWithTxn) AppendRowChangedEvent(e *model.RowChangedEvent) (EncoderResult, error) {
+	d.txnCache.Append(nil, e)
 	return EncoderNoOperation, nil
 }
 
+// AppendResolvedEvent appends a resolved event to the encoder
+func (d *CanalEventBatchEncoderWithTxn) AppendResolvedEvent(ts uint64) (EncoderResult, error) {
+	if ts < d.resolvedTs {
+		return EncoderNoOperation, nil
+	}
+	d.resolvedTs = ts
+	return EncoderNeedAsyncWrite, nil
+}
+
 // EncodeDDLEvent implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) EncodeDDLEvent(e *model.DDLEvent) (*MQMessage, error) {
+func (d *CanalEventBatchEncoderWithTxn) EncodeDDLEvent(e *model.DDLEvent) (*MQMessage, error) {
+	canalMessageEncoder := newCanalMessageEncoder()
+	canalMessageEncoder.setForceHandleKeyPKey(d.forceHkPk)
+	return canalMessageEncoder.encodeDDLEvent(e)
+}
+
+// Build implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithTxn) Build() []*MQMessage {
+	resolvedTxns := d.txnCache.Resolved(d.resolvedTs)
+	if len(resolvedTxns) == 0 {
+		return nil
+	}
+	messages := make([]*MQMessage, 0, len(resolvedTxns))
+	canalMessageEncoder := newCanalMessageEncoder()
+	canalMessageEncoder.setForceHandleKeyPKey(d.forceHkPk)
+	for _, txns := range resolvedTxns {
+		for _, txn := range txns {
+			for _, row := range txn.Rows {
+				err := canalMessageEncoder.appendRowChangedEvent(row)
+				if err != nil {
+					log.Fatal("Error when append row change event", zap.Error(err))
+				}
+			}
+			message := canalMessageEncoder.build(txn.CommitTs)
+			if message == nil {
+				continue
+			}
+			messages = append(messages, message)
+		}
+	}
+	sort.Slice(messages, func(i, j int) bool { return messages[i].Ts < messages[j].Ts })
+	return messages
+}
+
+// MixedBuild implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithTxn) MixedBuild(withVersion bool) []byte {
+	panic("Mixed Build only use for JsonEncoder")
+}
+
+//Size implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithTxn) Size() int {
+	// FIXME encoder with transaction support is hard to calculate the encoded buffer size
+	return -1
+}
+
+// Reset implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithTxn) Reset() {
+	panic("Reset only used for JsonEncoder")
+}
+
+// NewCanalEventBatchEncoderWithTxn creates a new CanalEventBatchEncoderWithTxn.
+func NewCanalEventBatchEncoderWithTxn() EventBatchEncoder {
+	encoder := &CanalEventBatchEncoderWithTxn{
+		txnCache: common.NewUnresolvedTxnCache(),
+	}
+	return encoder
+}
+
+// CanalEventBatchEncoderWithoutTxn encodes the events into the byte of a batch .
+type CanalEventBatchEncoderWithoutTxn struct {
+	encoder *canalMessageEncoder
+}
+
+// SetForceHandleKeyPKey set forceHandleKeyPKey, then handle key will be regarded as primary key
+func (d *CanalEventBatchEncoderWithoutTxn) SetForceHandleKeyPKey(forceHkPk bool) {
+	d.encoder.setForceHandleKeyPKey(forceHkPk)
+}
+
+// EncodeCheckpointEvent implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) EncodeCheckpointEvent(ts uint64) (*MQMessage, error) {
+	// For canal now, there is no such a corresponding type to ResolvedEvent so far.
+	// Therefore the event is ignored.
+	return nil, nil
+}
+
+// AppendRowChangedEvent implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) AppendRowChangedEvent(e *model.RowChangedEvent) (EncoderResult, error) {
+	err := d.encoder.appendRowChangedEvent(e)
+	return EncoderNoOperation, err
+}
+
+// AppendResolvedEvent appends a resolved event to the encoder
+func (d *CanalEventBatchEncoderWithoutTxn) AppendResolvedEvent(ts uint64) (EncoderResult, error) {
+	return EncoderNeedAsyncWrite, nil
+}
+
+// EncodeDDLEvent implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) EncodeDDLEvent(e *model.DDLEvent) (*MQMessage, error) {
+	return d.encoder.encodeDDLEvent(e)
+}
+
+// Build implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) Build() []*MQMessage {
+	ret := d.encoder.build(0)
+	if ret == nil {
+		return nil
+	}
+	return []*MQMessage{ret}
+}
+
+// MixedBuild implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) MixedBuild(withVersion bool) []byte {
+	panic("Mixed Build only use for JsonEncoder")
+}
+
+//Size implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) Size() int {
+	// FIXME encoder with transaction support is hard to calculate the encoded buffer size
+	return d.encoder.size()
+}
+
+// Reset implements the EventBatchEncoder interface
+func (d *CanalEventBatchEncoderWithoutTxn) Reset() {
+	panic("Reset only used for JsonEncoder")
+}
+
+// NewCanalEventBatchEncoderWithoutTxn creates a new NewCanalEventBatchEncoderWithoutTxn.
+func NewCanalEventBatchEncoderWithoutTxn() EventBatchEncoder {
+	encoder := &CanalEventBatchEncoderWithoutTxn{
+		encoder: newCanalMessageEncoder(),
+	}
+	return encoder
+}
+
+// NewCanalEventBatchEncoder creates a new NewCanalEventBatchEncoderWithoutTxn.
+func NewCanalEventBatchEncoder() EventBatchEncoder {
+	// canal protocol does not support transaction by default
+	return NewCanalEventBatchEncoderWithoutTxn()
+}
+
+type canalMessageEncoder struct {
+	messages     *canal.Messages
+	packet       *canal.Packet
+	entryBuilder *canalEntryBuilder
+}
+
+func (d *canalMessageEncoder) setForceHandleKeyPKey(forceHkPk bool) {
+	d.entryBuilder.forceHkPk = forceHkPk
+}
+
+func (d *canalMessageEncoder) appendRowChangedEvent(e *model.RowChangedEvent) error {
+	entry, err := d.entryBuilder.FromRowEvent(e)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	b, err := proto.Marshal(entry)
+	if err != nil {
+		return cerror.WrapError(cerror.ErrCanalEncodeFailed, err)
+	}
+	d.messages.Messages = append(d.messages.Messages, b)
+	return nil
+}
+
+// encodeDDLEvent encode ddl event to mqmessage
+func (d *canalMessageEncoder) encodeDDLEvent(e *model.DDLEvent) (*MQMessage, error) {
 	entry, err := d.entryBuilder.FromDdlEvent(e)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -372,32 +531,45 @@ func (d *CanalEventBatchEncoder) EncodeDDLEvent(e *model.DDLEvent) (*MQMessage, 
 	if err != nil {
 		return nil, cerror.WrapError(cerror.ErrCanalEncodeFailed, err)
 	}
-
 	return NewMQMessage(nil, b, e.CommitTs), nil
 }
 
-// Build implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) Build() []*MQMessage {
+func (d *canalMessageEncoder) build(commitTs uint64) *MQMessage {
+	if len(d.messages.Messages) == 0 {
+		return nil
+	}
+
 	err := d.refreshPacketBody()
 	if err != nil {
 		log.Fatal("Error when generating Canal packet", zap.Error(err))
 	}
+
 	value, err := proto.Marshal(d.packet)
 	if err != nil {
 		log.Fatal("Error when serializing Canal packet", zap.Error(err))
 	}
-	ret := NewMQMessage(nil, value, 0)
+	ret := NewMQMessage(nil, value, commitTs)
 	d.messages.Reset()
-	return []*MQMessage{ret}
+	d.resetPacket()
+	return ret
 }
 
-// MixedBuild implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) MixedBuild(withVersion bool) []byte {
-	panic("Mixed Build only use for JsonEncoder")
+// refreshPacketBody() marshals the messages to the packet body
+func (d *canalMessageEncoder) refreshPacketBody() error {
+	oldSize := len(d.packet.Body)
+	newSize := proto.Size(d.messages)
+	if newSize > oldSize {
+		// resize packet body slice
+		d.packet.Body = append(d.packet.Body, make([]byte, newSize-oldSize)...)
+	} else {
+		d.packet.Body = d.packet.Body[:newSize]
+	}
+
+	_, err := d.messages.MarshalToSizedBuffer(d.packet.Body)
+	return err
 }
 
-// Size implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) Size() int {
+func (d *canalMessageEncoder) size() int {
 	// TODO: avoid marshaling the messages every time for calculating the size of the packet
 	err := d.refreshPacketBody()
 	if err != nil {
@@ -406,36 +578,20 @@ func (d *CanalEventBatchEncoder) Size() int {
 	return proto.Size(d.packet)
 }
 
-// Reset implements the EventBatchEncoder interface
-func (d *CanalEventBatchEncoder) Reset() {
-	panic("Reset only used for JsonEncoder")
-}
-
-// refreshPacketBody() marshals the messages to the packet body
-func (d *CanalEventBatchEncoder) refreshPacketBody() error {
-	oldSize := len(d.packet.Body)
-	newSize := proto.Size(d.messages)
-	if newSize > oldSize {
-		// resize packet body slice
-		d.packet.Body = append(d.packet.Body, make([]byte, newSize-oldSize)...)
-	}
-	_, err := d.messages.MarshalToSizedBuffer(d.packet.Body[:newSize])
-	return err
-}
-
-// NewCanalEventBatchEncoder creates a new CanalEventBatchEncoder.
-func NewCanalEventBatchEncoder() EventBatchEncoder {
-	p := &canal.Packet{
+func (d *canalMessageEncoder) resetPacket() {
+	d.packet = &canal.Packet{
 		VersionPresent: &canal.Packet_Version{
 			Version: CanalPacketVersion,
 		},
 		Type: canal.PacketType_MESSAGES,
 	}
+}
 
-	encoder := &CanalEventBatchEncoder{
+func newCanalMessageEncoder() *canalMessageEncoder {
+	encoder := &canalMessageEncoder{
 		messages:     &canal.Messages{},
-		packet:       p,
 		entryBuilder: NewCanalEntryBuilder(),
 	}
+	encoder.resetPacket()
 	return encoder
 }

@@ -54,10 +54,10 @@ func testAvro() {
 
 func testCanal() {
 	testCases := []framework.Task{
-		//canal.NewSimpleCase(),
-		//canal.NewDeleteCase(),
+		canal.NewSimpleCase(),
+		canal.NewDeleteCase(),
 		canal.NewManyTypesCase(),
-		canal.NewUnsignedCase(),
+		//canal.NewUnsignedCase(),
 		canal.NewCompositePKeyCase(),
 		canal.NewAlterCase(), // this case is slow, so put it last
 	}

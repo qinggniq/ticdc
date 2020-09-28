@@ -151,6 +151,10 @@ func (e *KafkaDockerEnv) RunTest(task framework.Task) {
 	log.Info("Start running task", zap.String("name", task.Name()))
 	err = task.Run(taskCtx)
 	if err != nil {
+		err1 := e.DumpStdout()
+		if err1 != nil {
+			log.Warn("Failed to dump container logs", zap.Error(err1))
+		}
 		e.TearDown()
 		log.Fatal("RunTest: task failed", zap.String("name", task.Name()), zap.Error(err))
 	}
